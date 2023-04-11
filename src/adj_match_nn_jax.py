@@ -46,9 +46,8 @@ class MLP:
         inputs = self.scaler.transform(inputs)
 
         for w, b in params[:-1]:
-            residual = inputs # for skip connection
             inputs = jnp.dot(w, inputs) + b
-            inputs = self.activation(inputs + residual) 
+            inputs = self.activation(inputs) 
         w_f, b_f = params[-1]
         out = jnp.dot(w_f, inputs) + b_f
         return out
@@ -58,10 +57,16 @@ class MLP:
         return f_pass_v(params, x)
     
     def nn_adjoint(self, params, x):
-        def adjoint(params, x):
-            jac = jax.jacfwd(self.forward, argnums=1)(params, x)
-            return jac
-        return vmap(adjoint, in_axes=(None, 0), out_axes=0)(params, x)
+        '''Calculate the Jacobian-vector product
+            It is more efficient to do so. In this case, we use a vector to sum up the rows of the calculated
+            Jacobian as the average model output gradient w.r.t. the input paramters.
+        '''
+        def adjoint_vect_prod(params, x):
+            evaluated_value, vect_prod_fn = jax.vjp(self.forward, params, x)
+            print(evaluated_value.shape, 'eval value shape')
+            vect_prod = vect_prod_fn(jnp.ones(80))[1] # shape 159
+            return vect_prod
+        return vmap(adjoint_vect_prod, in_axes=(None, 0), out_axes=0)(params, x)
 
 class Trainer:
     def __init__(self, net, num_epochs, batch_size, learning_rate, optimizer, scaler=None, model_param_only=False):
@@ -84,9 +89,15 @@ class Trainer:
         self.model_param_only = model_param_only
 
     def loss(self, params, x, y, adj_y, alpha):
+        # calcuate vector-true jacobian product
+        def vect_jcob_prod(jcob):
+            return jnp.ones(80) @ jcob
+        true_v_j_prod = vmap(vect_jcob_prod, in_axes=0, out_axes=0)(adj_y)
+        print('true jbo shape', true_v_j_prod.shape)
         pred = self.net.apply(params, x)
         adj = self.net.nn_adjoint(params, x)
-        adj_loss = jnp.mean((adj - adj_y)**2)
+        # print('NN vjp shape is ', adj)
+        adj_loss = jnp.mean((adj - true_v_j_prod)**2)
         totLoss = jnp.mean((pred - y)**2) + alpha*adj_loss
         return totLoss, adj_loss
     
@@ -149,7 +160,7 @@ class Trainer:
                 x_batch = x_train[i*self.batch_size:(i+1)*self.batch_size]
                 y_batch = y_train[i*self.batch_size:(i+1)*self.batch_size]
                 adj_batch = adj_train[i*self.batch_size:(i+1)*self.batch_size]
-                if self.loss_model_param_only:
+                if self.loss_model_param_only==True:
                     params, ls, opt_state, adj_ls_batch= self.step_model_param_only(params, x_batch, y_batch,  adj_batch, running_alpha, opt_state)
                 else:
                     params, ls, opt_state, adj_ls_batch= self.step_(params, x_batch, y_batch,  adj_batch, running_alpha, opt_state)
@@ -158,7 +169,7 @@ class Trainer:
                 train_running_ls.append(ls)
                 train_running_adj_ls.append(adj_ls_batch)
 
-            if self.model_param_only:
+            if self.model_param_only==True:
                 ls_val, val_adj_loss = self.loss_model_param_only(params, x_val, y_val, adj_val, alpha) # set alpha with the preset value in validation. 
             else:
                 ls_val, val_adj_loss = self.loss(params, x_val, y_val, adj_val, alpha) # set alpha with the preset value in validation. 
@@ -229,7 +240,7 @@ if __name__ == "__main__":
     scaler = StandardScaler(train['x']) 
  
     save_name = 'mixed_init'
-    net = MLP([159]*15, in_dim=159, out_dim=80, act_fn='relu', scaler=scaler)
+    net = MLP([500]*10, in_dim=159, out_dim=80, act_fn='relu', scaler=scaler)
     sup = Trainer(net=net, 
                 num_epochs=args.epoch, 
                 batch_size=args.batch_size, 
