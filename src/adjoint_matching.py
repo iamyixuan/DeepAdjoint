@@ -49,6 +49,7 @@ class DifferentiableBurgersSolver:
         x = np.linspace(self.XMIN, self.XMAX, self.NX)
         self.cur_u = tf.cast(self.init_cond(x),tf.float32)
     def foward_solve(self, cur_u):
+        # add Nu to the cur_u vector
         cur_u = math.tensor(cur_u, math.spatial('x'))
         cur_u = CenteredGrid(cur_u, extrapolation.PERIODIC, x=self.NX, bounds=Box(x=(self.XMIN,self.XMAX))) 
         v1 = diffuse.explicit(1.0*cur_u, self.NU, self.DT, substeps=1)

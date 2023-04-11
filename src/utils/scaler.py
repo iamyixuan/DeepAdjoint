@@ -1,4 +1,5 @@
 import numpy as np
+import jax.numpy as jnp
 
 class MinMaxScaler:
     def __init__(self, data, min_=0, max_=1) -> None:
@@ -14,3 +15,13 @@ class MinMaxScaler:
         d_diff = self.data_max - self.data_min + 1e-6
         s_diff = self.max_ - self.min_
         return (x - self.min_)/s_diff * d_diff+ self.data_min
+
+class StandardScaler:
+    def __init__(self, data):
+        self.std = jnp.std(data, axis=0)
+        self.mean = jnp.mean(data, axis=0)
+    def transform(self, x):
+        return (x - self.mean) / (self.std + 1e-6)
+    def inverse_transform(self, x):
+        return x * self.std + self.mean
+        

@@ -1,0 +1,12 @@
+data/
+.DS_Store
+Data/
+figs/
+figs_adjoint/
+logs/
+*.pdf
+*.png
+*.gif
+saved_model/
+
+

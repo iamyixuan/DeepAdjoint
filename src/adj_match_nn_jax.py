@@ -12,12 +12,13 @@ from utils.scaler import MinMaxScaler
 from utils.metrics import r2
 
 class MLP:
-    def __init__(self, layers, in_dim, out_dim, act_fn) -> None:
+    def __init__(self, layers, in_dim, out_dim, act_fn, scaler=None) -> None:
         self.layers = [in_dim] + layers + [out_dim]
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.params = self.init_network(random.PRNGKey(5))
         self.act_fn = act_fn
+        self.scaler = scaler
 
     def init_network(self, key):
         initializer = jax.nn.initializers.glorot_normal()
@@ -41,9 +42,13 @@ class MLP:
     
     def forward(self, params, x):
         inputs = x
+        # add a normalization layer here
+        inputs = self.scaler.transform(inputs)
+
         for w, b in params[:-1]:
+            residual = inputs # for skip connection
             inputs = jnp.dot(w, inputs) + b
-            inputs = self.activation(inputs)
+            inputs = self.activation(inputs + residual) 
         w_f, b_f = params[-1]
         out = jnp.dot(w_f, inputs) + b_f
         return out
@@ -59,18 +64,35 @@ class MLP:
         return vmap(adjoint, in_axes=(None, 0), out_axes=0)(params, x)
 
 class Trainer:
-    def __init__(self, net, num_epochs, batch_size, learning_rate, optimizer, scaler=None):
+    def __init__(self, net, num_epochs, batch_size, learning_rate, optimizer, scaler=None, model_param_only=False):
+        '''Trainer for the adjoint matching neural network
+        args:
+            net: MLP class instance.
+            num_epochs: maximum number of epochs for traning.
+            batch_size: batch size for the training set.
+            learning_rate: the initial learning rate for the optimizer.
+            optimizer: optax optimizer.
+            scaler: if using scaler for both input and output.
+            model_params_only: if only match the adjoint of the physical model parameters excluding solutions. 
+        '''
         self.net = net
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.optimizer = optimizer(learning_rate=learning_rate)
         self.scaler = scaler
-        
+        self.model_param_only = model_param_only
 
     def loss(self, params, x, y, adj_y, alpha):
         pred = self.net.apply(params, x)
         adj = self.net.nn_adjoint(params, x)
+        adj_loss = jnp.mean((adj - adj_y)**2)
+        totLoss = jnp.mean((pred - y)**2) + alpha*adj_loss
+        return totLoss, adj_loss
+    
+    def loss_model_param_only(self, params, x, y, adj_y, alpha):
+        pred = self.net.apply(params, x)
+        adj = self.net.nn_adjoint(params, x)#[..., 75:80] # specifiy which parameters to match the adjoint.
         adj_loss = jnp.mean((adj - adj_y)**2)
         totLoss = jnp.mean((pred - y)**2) + alpha*adj_loss
         return totLoss, adj_loss
@@ -83,15 +105,24 @@ class Trainer:
         params = optax.apply_updates(params, updates)
         return params, ls, opt_state, adj_loss
 
+    @partial(jax.jit, static_argnums=(0,)) 
+    def step_model_param_only(self, params, x, y, adj_y, alpha, opt_state):
+        # ls, adj_loss = self.loss(params, x, y, adj_y, alpha)
+        (ls, adj_loss), grads = jax.value_and_grad(self.loss_model_param_only, argnums=0, has_aux=True)(params, x, y, adj_y, alpha)
+        updates, opt_state = self.optimizer.update(grads, opt_state)
+        params = optax.apply_updates(params, updates)
+        return params, ls, opt_state, adj_loss
 
     def train_(self, params, train_data, val_data, alpha, save_date=None):
         x_train = train_data['x']
         adj_train = train_data['adj']
+        if self.model_param_only:
+            adj_train = adj_train#[..., 75:80] # only consider the adjoint of model parameters.
         y_train = train_data['y']
-
-
         x_val = val_data['x']
         adj_val = val_data['adj']
+        if self.model_param_only:
+            adj_val = adj_val#[..., 75:80]
         y_val = val_data['y']
 
         logger = {'train_loss': [], 
@@ -100,24 +131,6 @@ class Trainer:
                   'val_adj_loss':[],
                   'train_r2': [], 
                   'val_r2':[]}
-
-        if self.scaler is not None:
-            x_scaler = self.scaler(x_train)
-            adj_scaler = self.scaler(adj_train)
-            y_scaler = self.scaler(y_train)
-
-            # x_train = x_scaler.transform(x_train)
-            adj_train = adj_scaler.transform(adj_train)
-            y_train = y_scaler.transform(y_train)
-
-            # x_val = x_scaler.transform(x_val)
-            adj_val = adj_scaler.transform(adj_val)
-            y_val = y_scaler.transform(y_val)
-
-            logger['x_scaler'] = x_scaler
-            logger['adj_scaler'] = adj_scaler
-            logger['y_scaler'] = y_scaler
-    
         
         opt_state = self.optimizer.init(params)
 
@@ -130,19 +143,25 @@ class Trainer:
             train_running_ls = []
             train_running_r2 = []
             train_running_adj_ls = []
-            if (ep+1) % 10 == 0:# and running_alpha <= alpha:
+            if (ep+1) % 10 == 0 and running_alpha <= alpha:
                 running_alpha += 1 #alpha/10.
             for i in range(len(x_train)//self.batch_size):
                 x_batch = x_train[i*self.batch_size:(i+1)*self.batch_size]
                 y_batch = y_train[i*self.batch_size:(i+1)*self.batch_size]
                 adj_batch = adj_train[i*self.batch_size:(i+1)*self.batch_size]
-                params, ls, opt_state, adj_ls_batch= self.step_(params, x_batch, y_batch,  adj_batch, running_alpha, opt_state)
+                if self.loss_model_param_only:
+                    params, ls, opt_state, adj_ls_batch= self.step_model_param_only(params, x_batch, y_batch,  adj_batch, running_alpha, opt_state)
+                else:
+                    params, ls, opt_state, adj_ls_batch= self.step_(params, x_batch, y_batch,  adj_batch, running_alpha, opt_state)
                 pred_batch = self.net.apply(params, x_batch)
                 train_running_r2.append(r2(y_batch, pred_batch))
                 train_running_ls.append(ls)
                 train_running_adj_ls.append(adj_ls_batch)
 
-            ls_val, val_adj_loss = self.loss(params, x_val, y_val, adj_val, alpha) # set alpha with the preset value in validation. 
+            if self.model_param_only:
+                ls_val, val_adj_loss = self.loss_model_param_only(params, x_val, y_val, adj_val, alpha) # set alpha with the preset value in validation. 
+            else:
+                ls_val, val_adj_loss = self.loss(params, x_val, y_val, adj_val, alpha) # set alpha with the preset value in validation. 
             pred_val = self.net.apply(params, x_val)
             logger['train_loss'].append(jnp.asarray(train_running_ls).mean())
             logger['train_r2'].append(jnp.asarray(train_running_r2).mean())
@@ -150,8 +169,7 @@ class Trainer:
             logger['val_loss'].append(ls_val)
             logger['val_adj_loss'].append(val_adj_loss)
             logger['val_r2'].append(r2(y_val, pred_val))
-            with open('./logs/logger_'+save_date, 'wb') as f:
-                pickle.dump(logger, f)
+
             print('Epoch: {} training loss {:.4f} validation loss {:.4f}'.format(ep, logger['train_loss'][-1], logger['val_loss'][-1]))
             print('training r2 {:.4f} validation r2 {:.4f}'.format(logger['train_r2'][-1], logger['val_r2'][-1]))
             print('training adj loss {:.4f} validation adj loss {:.4f}'.format(logger['train_adj_loss'][-1], logger['val_adj_loss'][-1]))
@@ -162,6 +180,13 @@ class Trainer:
                 best_val = ls_val 
                 tol = 0
             tol+=1
+
+            if ep + 1 == self.num_epochs:
+                # save the params at the final epoch.
+                logger['final_params'] = params
+
+            with open('./logs/logger_'+save_date, 'wb') as f:
+                pickle.dump(logger, f)
             if tol > patience:
                 print("Early stopping...")
                 break       
@@ -175,6 +200,7 @@ class Trainer:
 
 if __name__ == "__main__":
     from utils.data_loader import split_data
+    from utils.scaler import StandardScaler
     import os
     import argparse
 
@@ -185,7 +211,7 @@ if __name__ == "__main__":
     parser.add_argument('-a', type=float, default=1)
     parser.add_argument('-epoch', type=int, default=100)
     parser.add_argument('-batch_size', type=int, default=128)
-    parser.add_argument('-lr', type=float, default=0.0005)
+    parser.add_argument('-lr', type=float, default=0.0001)
     args = parser.parse_args()
 
     now = datetime.now()
@@ -199,17 +225,18 @@ if __name__ == "__main__":
     jrav = data['jrav']
 
     train, val, test = split_data(inputs, uout, jrav, shuffle_all=True)
-    
 
-
+    scaler = StandardScaler(train['x']) 
+ 
     save_name = 'mixed_init'
-    net = MLP([256]*10, in_dim=159, out_dim=80, act_fn='relu')
+    net = MLP([159]*15, in_dim=159, out_dim=80, act_fn='relu', scaler=scaler)
     sup = Trainer(net=net, 
                 num_epochs=args.epoch, 
                 batch_size=args.batch_size, 
                 learning_rate=args.lr, 
                 optimizer=optax.adam,
-                scaler=None)
+                scaler=None,
+                model_param_only=False)
     net_params = sup.train_(net.params, train, val, args.a, now_str)
     
     
