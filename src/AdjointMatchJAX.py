@@ -55,6 +55,12 @@ class MLP:
     def apply(self, params, x):
         f_pass_v = vmap(self.forward, in_axes=(None, 0))
         return f_pass_v(params, x)
+
+    def full_Jacobian(self, params, x):
+        def adjoint(params, x):
+            jac = jax.jacfwd(self.forward, argnums=1)(params, x)
+            return jac
+        return vmap(adjoint, in_axes=(None, 0), out_axes=0)(params, x)
     
     def nn_adjoint(self, params, x):
         '''Calculate the Jacobian-vector product
@@ -63,13 +69,12 @@ class MLP:
         '''
         def adjoint_vect_prod(params, x):
             evaluated_value, vect_prod_fn = jax.vjp(self.forward, params, x)
-            print(evaluated_value.shape, 'eval value shape')
-            vect_prod = vect_prod_fn(jnp.ones(80))[1] # shape 159
+            vect_prod = vect_prod_fn(jnp.ones(self.out_dim))[1] # shape same as the input dimension
             return vect_prod
         return vmap(adjoint_vect_prod, in_axes=(None, 0), out_axes=0)(params, x)
 
 class Trainer:
-    def __init__(self, net, num_epochs, batch_size, learning_rate, optimizer, scaler=None, model_param_only=False):
+    def __init__(self, net, num_epochs, batch_size, learning_rate, optimizer,  if_full_Jacobian='False'):
         '''Trainer for the adjoint matching neural network
         args:
             net: MLP class instance.
@@ -77,33 +82,30 @@ class Trainer:
             batch_size: batch size for the training set.
             learning_rate: the initial learning rate for the optimizer.
             optimizer: optax optimizer.
-            scaler: if using scaler for both input and output.
-            model_params_only: if only match the adjoint of the physical model parameters excluding solutions. 
+            if_full_Jacobian: if matching the full Jacobian.
         '''
         self.net = net
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.optimizer = optimizer(learning_rate=learning_rate)
-        self.scaler = scaler
-        self.model_param_only = model_param_only
+        self.if_full_Jacobian = if_full_Jacobian
+
 
     def loss(self, params, x, y, adj_y, alpha):
         # calcuate vector-true jacobian product
         def vect_jcob_prod(jcob):
-            return jnp.ones(80) @ jcob
+            return jnp.ones(y.shape[1]) @ jcob # change the dimension to obtain the proper product
         true_v_j_prod = vmap(vect_jcob_prod, in_axes=0, out_axes=0)(adj_y)
-        print('true jbo shape', true_v_j_prod.shape)
         pred = self.net.apply(params, x)
         adj = self.net.nn_adjoint(params, x)
-        # print('NN vjp shape is ', adj)
         adj_loss = jnp.mean((adj - true_v_j_prod)**2)
         totLoss = jnp.mean((pred - y)**2) + alpha*adj_loss
         return totLoss, adj_loss
     
-    def loss_model_param_only(self, params, x, y, adj_y, alpha):
+    def loss_full_Jacobian(self, params, x, y, adj_y, alpha):
         pred = self.net.apply(params, x)
-        adj = self.net.nn_adjoint(params, x)#[..., 75:80] # specifiy which parameters to match the adjoint.
+        adj = self.net.full_Jacobian(params, x)
         adj_loss = jnp.mean((adj - adj_y)**2)
         totLoss = jnp.mean((pred - y)**2) + alpha*adj_loss
         return totLoss, adj_loss
@@ -117,9 +119,8 @@ class Trainer:
         return params, ls, opt_state, adj_loss
 
     @partial(jax.jit, static_argnums=(0,)) 
-    def step_model_param_only(self, params, x, y, adj_y, alpha, opt_state):
-        # ls, adj_loss = self.loss(params, x, y, adj_y, alpha)
-        (ls, adj_loss), grads = jax.value_and_grad(self.loss_model_param_only, argnums=0, has_aux=True)(params, x, y, adj_y, alpha)
+    def step_full_Jacobian(self, params, x, y, adj_y, alpha, opt_state):
+        (ls, adj_loss), grads = jax.value_and_grad(self.loss_full_Jacobian, argnums=0, has_aux=True)(params, x, y, adj_y, alpha)
         updates, opt_state = self.optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
         return params, ls, opt_state, adj_loss
@@ -127,13 +128,9 @@ class Trainer:
     def train_(self, params, train_data, val_data, alpha, save_date=None):
         x_train = train_data['x']
         adj_train = train_data['adj']
-        if self.model_param_only:
-            adj_train = adj_train#[..., 75:80] # only consider the adjoint of model parameters.
         y_train = train_data['y']
         x_val = val_data['x']
         adj_val = val_data['adj']
-        if self.model_param_only:
-            adj_val = adj_val#[..., 75:80]
         y_val = val_data['y']
 
         logger = {'train_loss': [], 
@@ -160,8 +157,8 @@ class Trainer:
                 x_batch = x_train[i*self.batch_size:(i+1)*self.batch_size]
                 y_batch = y_train[i*self.batch_size:(i+1)*self.batch_size]
                 adj_batch = adj_train[i*self.batch_size:(i+1)*self.batch_size]
-                if self.loss_model_param_only==True:
-                    params, ls, opt_state, adj_ls_batch= self.step_model_param_only(params, x_batch, y_batch,  adj_batch, running_alpha, opt_state)
+                if self.if_full_Jacobian=='True':
+                    params, ls, opt_state, adj_ls_batch= self.step_full_Jacobian(params, x_batch, y_batch,  adj_batch, running_alpha, opt_state)
                 else:
                     params, ls, opt_state, adj_ls_batch= self.step_(params, x_batch, y_batch,  adj_batch, running_alpha, opt_state)
                 pred_batch = self.net.apply(params, x_batch)
@@ -169,9 +166,13 @@ class Trainer:
                 train_running_ls.append(ls)
                 train_running_adj_ls.append(adj_ls_batch)
 
-            if self.model_param_only==True:
-                ls_val, val_adj_loss = self.loss_model_param_only(params, x_val, y_val, adj_val, alpha) # set alpha with the preset value in validation. 
+            if self.if_full_Jacobian=='True':
+                if ep==0:
+                    print("Training with full Jacobian...")
+                ls_val, val_adj_loss = self.loss_full_Jacobian(params, x_val, y_val, adj_val, alpha) # set alpha with the preset value in validation. 
             else:
+                if ep==0:
+                    print("Training with vector-Jacobian product...")
                 ls_val, val_adj_loss = self.loss(params, x_val, y_val, adj_val, alpha) # set alpha with the preset value in validation. 
             pred_val = self.net.apply(params, x_val)
             logger['train_loss'].append(jnp.asarray(train_running_ls).mean())
@@ -210,7 +211,7 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    from utils.data_loader import split_data
+    from utils.data_loader import split_data, combine_burgers_data
     from utils.scaler import StandardScaler
     import os
     import argparse
@@ -218,36 +219,38 @@ if __name__ == "__main__":
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-name', type=str, default=None)
+    parser.add_argument('-name', type=str, default='AdjointMatchingNN')
     parser.add_argument('-a', type=float, default=1)
     parser.add_argument('-epoch', type=int, default=100)
     parser.add_argument('-batch_size', type=int, default=128)
     parser.add_argument('-lr', type=float, default=0.0001)
+    parser.add_argument('-problem', type=str, default='Burgers')
     args = parser.parse_args()
 
     now = datetime.now()
     now_str = now.strftime('%m-%d-%H') + '_' + args.name + '_lr' + str(args.lr) +'_alpha' + str(args.a) 
 
-    # config.update("jax_enable_x64", True)
-
-    data = np.load('../data/vary_beta.dat.npz')
-    inputs = data['inputs']
-    uout = data['uout']
-    jrav = data['jrav']
-
-    train, val, test = split_data(inputs, uout, jrav, shuffle_all=True)
-
+    if args.problem == 'Glacier':
+        data = np.load('../data/vary_beta.dat_4-7-23.npz')
+        inputs = data['inputs']
+        uout = data['uout']
+        j_beta = data['jac_beta']
+        jrav = data['jac_u']
+        jrav = np.concatenate([jrav, j_beta[..., np.newaxis]], axis=-1)
+        train, val, test = split_data(inputs, uout, jrav, shuffle_all=True)
+    elif args.problem == 'Burgers':
+        x, y, adj = combine_burgers_data('./Data/mixed_nu/')
+        train, val, test = split_data(x, y, adj, shuffle_all=True)
+    
     scaler = StandardScaler(train['x']) 
  
-    save_name = 'mixed_init'
-    net = MLP([500]*10, in_dim=159, out_dim=80, act_fn='relu', scaler=scaler)
+    net = MLP([50]*10, in_dim=train['x'].shape[1], out_dim=train['y'].shape[1], act_fn='relu', scaler=scaler)
     sup = Trainer(net=net, 
                 num_epochs=args.epoch, 
                 batch_size=args.batch_size, 
                 learning_rate=args.lr, 
                 optimizer=optax.adam,
-                scaler=None,
-                model_param_only=False)
+                if_full_Jacobian='False')
     net_params = sup.train_(net.params, train, val, args.a, now_str)
     
     

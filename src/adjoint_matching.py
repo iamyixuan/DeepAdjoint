@@ -37,7 +37,7 @@ class DifferentiableBurgersSolver:
     def __init__(self, init_coeff, NX, NT, NU, XMIN, XMAX, TMAX):
         self.NX = NX
         self.NT = NT
-        self.NU = NU
+        self.NU = np.array([NU])
         self.XMIN = XMIN
         self.XMAX = XMAX
         self.TMAX = TMAX
@@ -48,19 +48,21 @@ class DifferentiableBurgersSolver:
         self.init_cond = lambda x: -np.sin(init_coeff*np.pi * x)
         x = np.linspace(self.XMIN, self.XMAX, self.NX)
         self.cur_u = tf.cast(self.init_cond(x),tf.float32)
+        self.cur_u = tf.concat([self.cur_u, self.NU], axis=0)
+
     def foward_solve(self, cur_u):
+        # Nu being the last element in cur_u array.
         # add Nu to the cur_u vector
+        Nu = cur_u[-1]
+        cur_u = cur_u[:-1]
         cur_u = math.tensor(cur_u, math.spatial('x'))
         cur_u = CenteredGrid(cur_u, extrapolation.PERIODIC, x=self.NX, bounds=Box(x=(self.XMIN,self.XMAX))) 
-        v1 = diffuse.explicit(1.0*cur_u, self.NU, self.DT, substeps=1)
+        v1 = diffuse.explicit(1.0*cur_u, Nu, self.DT, substeps=1)
         v2 = advect.semi_lagrangian(v1, v1, self.DT)
         return v2.values.native()
     
     @tf.function
     def get_gradient(self, cur_u):
-        # gradient_function = math.jacobian(self.foward_solve)
-        # (u,v2), grad = gradient_function(cur_u)
-        # return v2, grad
         with tf.GradientTape() as tape:
             tape.watch(cur_u)
             v2 = self.foward_solve(cur_u)
@@ -70,14 +72,14 @@ class DifferentiableBurgersSolver:
 
     def get_data(self):
         cur_u = self.cur_u
-        sol = [cur_u]
+        sol = [cur_u[:-1]] # only save the states, excluding the viscosity.
         grads = []
         for t in range(self.NT):
             print("the current time step %d" % t)
             v2, grad = self.get_gradient(cur_u)
             sol.append(v2)
             grads.append(grad)
-            cur_u = v2
+            cur_u = tf.concat([v2, self.NU], axis=0) # here need to append Nu
         return sol, grads
 
 class AdjointMatchTrainer:
@@ -211,8 +213,8 @@ class AdjointMatchTrainer:
 
 if __name__ == "__main__":
     tf.random.set_seed(0)
-    # solver = DifferentiableBurgersSolver(0.25, 128, 200, 0.01/np.pi, -1., 1., 1.)
-    # sol, grad = solver.get_data()
+    solver = DifferentiableBurgersSolver(0.25, 128, 200, 0.01/np.pi, -1., 1., 1.)
+    sol, grad = solver.get_data()
     # import pickle 
     # with open('./Data/mixed_init_cond/sol_adj_coef_0.25pi.pkl',  'wb') as f:
     #     pickle.dump([sol, grad], f)
@@ -223,12 +225,12 @@ if __name__ == "__main__":
     # sol = np.stack(sol, axis=1)
     # print(sol.shape)
     # grad = np.stack(grad, axis=-1)
-    save_name = 'mixed_init'
+    # save_name = 'mixed_init'
 
-    net = FNN(num_layers=10, hidden_dim=200, output_dim=128, act_fn='tanh')
+    # net = FNN(num_layers=10, hidden_dim=200, output_dim=128, act_fn='tanh')
      
-    sup = AdjointMatchTrainer(net=net, data_path='./Data/mixed_init_cond/', save_name=save_name)
-    sup.train_net(850, 0.001, 3)
+    # sup = AdjointMatchTrainer(net=net, data_path='./Data/mixed_init_cond/', save_name=save_name)
+    # sup.train_net(850, 0.001, 3)
     # val = sup.prepare_data('val')
 
     # produce testing: time rollout
