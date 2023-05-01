@@ -8,6 +8,9 @@ def r2(true, pred):
     ss_tot = jnp.sum(jnp.power(true - jnp.mean(true), 2))
     return 1 - ss_res/ss_tot
 
+def mape(true, pred):
+    return jnp.abs(true - pred).mean()/jnp.abs(true).mean() * 100
+
 class min_max_scaler:
     def __init__(self,d_min, d_max, s_min=0, s_max=100) -> None:
         self.d_min = d_min

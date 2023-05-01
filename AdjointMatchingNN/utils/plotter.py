@@ -5,7 +5,10 @@ from sklearn.decomposition import PCA
 
 class Plotter:
     def __init__(self):
-        pass
+        plt.rcParams['lines.linewidth'] = 3
+        plt.rcParams['axes.linewidth'] = 1.5
+        plt.rcParams['font.family'] = 'serif'
+        plt.rcParams['font.size'] = 12
     def heat_map(self, x_t, x_p):
         """
         x: shape (time_steps, x_locs)
@@ -43,6 +46,16 @@ class Plotter:
         plt.legend()
         plt.tight_layout()
         return fig
+    
+    def scatter_plot(self, true, pred):
+        fig, ax = plt.subplots()
+        ax.set_box_aspect(1)
+        ax.scatter(true, pred)
+        ax.set_xlabel('True')
+        ax.set_ylabel('Pred')
+        ax.grid(color='k', alpha=0.5, linestyle='-.')
+        return fig
+
 
     def plot_density(self, x):
         fig, axs = plt.subplots(11, 8)

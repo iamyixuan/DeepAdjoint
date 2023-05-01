@@ -22,7 +22,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-init', type=float, default=0.25)
+    parser.add_argument('-init', type=float, default=1)
     parser.add_argument('-NX', type=int, default=128)
     parser.add_argument('-NT', type=int, default=200)
     parser.add_argument('-NU', type=float, default=0.01/np.pi)

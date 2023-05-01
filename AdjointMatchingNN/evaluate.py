@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from AdjointMatchJAX import MLP, Trainer
 from utils.data_loader import split_data, combine_burgers_data
-from utils.metrics import mean_squared_error, r2
+from utils.metrics import mean_squared_error, r2, mape
 from utils.scaler import StandardScaler
 from utils.plotter import Plotter
 
@@ -43,25 +43,20 @@ def plot_training(logger):
 
 def eval(args, logger):
     if args.problem == 'Glacier':
-        data = np.load('../data/vary_beta.dat.npz')
+        data = np.load('../data/vary_beta.dat_4-7-23.npz')
         x = data['inputs']
         y = data['uout']
-        adj = data['jrav']
+        j_beta = data['jac_beta']
+        jrav = data['jac_u']
+        adj = np.concatenate([jrav, j_beta[..., np.newaxis]], axis=-1)
         train, val, test = split_data(x, y, adj, shuffle_all=True)
     elif args.problem == 'Burgers':
         x, y, adj = combine_burgers_data('./Data/mixed_nu/')
         train, val, test = split_data(x, y, adj, shuffle_all=True)
     
     scaler = StandardScaler(train['x']) 
-    net = MLP([500]*10, in_dim=train['x'].shape[1], out_dim=train['y'].shape[1], act_fn='relu', scaler=scaler)
-    sup = Trainer(net=net, 
-                num_epochs=args.epoch, 
-                batch_size=args.batch_size, 
-                learning_rate=args.lr, 
-                optimizer=optax.adam,
-                model_param_only=False)
-    
-    params = logger['best_params']
+    net = MLP([200]*5, in_dim=train['x'].shape[1], out_dim=train['y'].shape[1], act_fn='tanh', scaler=scaler) 
+    params = logger['final_params']
     
     pred_adj = net.full_Jacobian(params, x)
     u_pred = net.apply(params, x)
@@ -72,16 +67,20 @@ def eval(args, logger):
     v_prod_map = jax.vmap(v_prod, in_axes=(None, 0))
     v = jax.numpy.ones(y.shape[1])
 
+    adj_idx = -2
 
     print('The forward MSE is {:.4f}'.format(mean_squared_error(y, u_pred)))
     print('The forwardR2 is {:.4f}'.format(r2(y, u_pred)))
-    print('The adj mse is {:.4f}'.format(mean_squared_error(adj, pred_adj)))
-    print('The test adj R2 is {:4f}'.format(r2(adj, pred_adj)))
+    print('The forward mape is {:.4f}'.format(mape(y, u_pred)))
+    print('The adj mse is {:.4f}'.format(mean_squared_error(adj[...,adj_idx:], pred_adj[...,adj_idx:])))
+    print('The adj R2 is {:4f}'.format(r2(adj[...,adj_idx:], pred_adj[...,adj_idx:])))
+    print('The adj mape is {:4f}'.format(mape(adj[...,adj_idx:], pred_adj[...,adj_idx:])))
     print('The VJP mse is {:.4f}'.format(mean_squared_error(v_prod_map(v, adj), v_prod_map(v,pred_adj))))
     print('The VJP adj R2 is {:4f}'.format(r2(v_prod_map(v, adj), v_prod_map(v,pred_adj))))
+    print('The VJP adj mape is {:4f}'.format(mape(v_prod_map(v, adj), v_prod_map(v,pred_adj))))
 
     plotter = Plotter()
-    fig = plotter.pca_plot(adj[3], pred_adj[3])
+    fig = plotter.scatter_plot(adj[3,...,-1], pred_adj[3, ..., -1])
     plt.show()
 
 
@@ -95,7 +94,7 @@ if __name__ == '__main__':
     parser.add_argument('-problem', type=str, default='Burgers')
     args = parser.parse_args()
 
-    logger = load_log('./logs/logger_04-11-14_BurgersVJP_lr0.0001_alpha1')
+    logger = load_log('./logs/logger_04-20-10_GlacierLast2_lr0.0001_alpha1')
 
     eval(args, logger)
 

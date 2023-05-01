@@ -105,9 +105,11 @@ class Trainer:
     
     def loss_full_Jacobian(self, params, x, y, adj_y, alpha):
         pred = self.net.apply(params, x)
-        adj = self.net.full_Jacobian(params, x)
+        adj = self.net.full_Jacobian(params, x)[..., :-1]
+        adj_y = adj_y[..., :-1]
         adj_loss = jnp.mean((adj - adj_y)**2)
-        totLoss = jnp.mean((pred - y)**2) + alpha*adj_loss
+        # totLoss = jnp.mean((pred - y)**2) + alpha*adj_loss
+        totLoss = adj_loss
         return totLoss, adj_loss
 
     @partial(jax.jit, static_argnums=(0,)) 
@@ -244,13 +246,13 @@ if __name__ == "__main__":
     
     scaler = StandardScaler(train['x']) 
  
-    net = MLP([50]*10, in_dim=train['x'].shape[1], out_dim=train['y'].shape[1], act_fn='relu', scaler=scaler)
+    net = MLP([200]*5, in_dim=train['x'].shape[1], out_dim=train['y'].shape[1], act_fn='tanh', scaler=scaler)
     sup = Trainer(net=net, 
                 num_epochs=args.epoch, 
                 batch_size=args.batch_size, 
                 learning_rate=args.lr, 
                 optimizer=optax.adam,
-                if_full_Jacobian='False')
+                if_full_Jacobian='True')
     net_params = sup.train_(net.params, train, val, args.a, now_str)
     
     

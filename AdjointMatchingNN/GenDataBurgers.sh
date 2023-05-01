@@ -3,7 +3,7 @@
 # Define the range of values
 min=0.00001
 max=0.01
-n=10
+n=20
 # Generate a random number in the range
 
 for (( i=1; i<=$n; i++ ))
