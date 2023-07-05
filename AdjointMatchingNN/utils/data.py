@@ -1,8 +1,59 @@
 import numpy as np
 import glob
 import pickle
+import random
+import os
 import torch
+import h5py
 from torch.utils.data import Dataset
+
+
+class SOMAdata(Dataset):
+    def __init__(self, path, mode, time_steps_per_forward=3):
+        '''path: the hd5f file path, can be relative path
+        mode: ['trian', 'val', 'test']
+        '''
+        super(SOMAdata, self).__init__()
+        DIR = os.path.dirname(os.path.abspath(__file__))
+        data_path = os.path.join(DIR, path)
+        self.data = h5py.File(data_path, 'r')
+        keys = list(data.keys())
+        random.Random(0).shuffle(keys)
+        TRAIN_SIZE = int(0.8 * len(keys))
+        TEST_SIZE = int(0.1 * len(keys))
+        self.time_steps_per_forward = time_steps_per_forward
+
+        if mode == 'train':
+            self.keys = keys[:TRAIN_SIZE]
+        elif mode == 'val':
+            self.keys = keys[TRAIN_SIZE: TRAIN_SIZE + TEST_SIZE]
+        elif mode == 'test':
+            self.keys = keys[-TEST_SIZE:]
+        else:
+            raise Exception(f'Invalid mode: {mode}, please select from "train", "val", and "test".')
+
+    def preprocess(self, x):
+        '''Prepare data as the input-output pair for a single forward run
+        x has the shape of (3, 185, 309, 60, 15)
+        the goal is to first move the ch axis to the second -> (3, 15, 185, 309, 60)
+        then create input output pair where the input shape is (1, 15, 185, 309, 60, 15) and the output shape is (1, 14, 185, 309, 60)
+        idx 14 is the varying parameter for the input.
+        '''
+        x = np.transpose(x, axes=[0, 4, 1, 2, 3])
+        x_in = x[:-1]
+        x_out = x[1:, :-1, ...] 
+        return (x_in, x_out)
+
+    def __len__(self):
+        return int(len(self.keys) * (self.time_steps_per_forward - 1))
+        
+    def __getitem__(self, index):
+        # get the key idx 
+        key_idx = int(index / (self.time_steps_per_forward - 1))
+        in_group_idx = index % (self.time_steps_per_forward - 1)
+        data = self.data[self.keys[key_idx]][...]
+        x, y = self.preprocess(data)
+        return torch.from_numpy(x[in_group_idx]).float(), torch.from_numpy(y[in_group_idx]).float()
 
 
 class MultiStepData(Dataset):

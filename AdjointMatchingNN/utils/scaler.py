@@ -30,3 +30,5 @@ class StandardScaler:
 
     def inverse_transform(self, x):
         return x * self.std + self.mean
+
+
