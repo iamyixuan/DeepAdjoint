@@ -51,7 +51,6 @@ class ResidualBlock3D(nn.Module):
         else:
             residual = x
         for layer in self.layers:
-            print(x.shape)
             x = layer(x)
         out = residual + x
         return out

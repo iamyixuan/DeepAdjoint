@@ -1,4 +1,7 @@
 import numpy as np
+import pickle
+import os
+from datetime import datetime
 
 
 class Logger:
@@ -15,4 +18,11 @@ class Logger:
     
     def print(self):
         print('Epoch: %d , Training loss: %.4f, Validation loss: %.4f' % (self.logger['epoch'][-1], self.logger['train_loss'][-1], self.logger['val_loss'][-1]))
-    
+
+    def finish(self):
+        time = datetime.now().strftime('%Y-%M-%D-%H')
+        if not os.path.exists('./logs/'):
+            os.makedirs('./logs/')
+        with open('./logs/' + time + '_logs.pkl') as f:
+            pickle.dump(self.logger, f)
+        print('Saving the training logs...')

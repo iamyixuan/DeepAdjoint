@@ -25,7 +25,7 @@ class OneStepSolve3D(nn.Module):
         super(OneStepSolve3D, self).__init__()
         self.layers = nn.ModuleList()
         self.layers.append(nn.Conv3d(in_ch, hidden, 3, padding='same'))
-        self.layers.append(nn.ReLU())
+        self.layers.append(nn.Tanh())
         for i in range(num_res_block):
             self.layers.append(ResidualBlock3D(hidden, hidden, 2, 2))
         self.layers.append(nn.Conv3d(hidden, out_ch, 3, padding='same'))
@@ -34,4 +34,3 @@ class OneStepSolve3D(nn.Module):
             x = l(x)
         return x
         
-            
