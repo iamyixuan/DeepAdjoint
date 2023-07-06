@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 
 
 class SOMAdata(Dataset):
-    def __init__(self, path, mode, time_steps_per_forward=3):
+    def __init__(self, path, mode, device, time_steps_per_forward=3):
         '''path: the hd5f file path, can be relative path
         mode: ['trian', 'val', 'test']
         '''
@@ -17,10 +17,12 @@ class SOMAdata(Dataset):
         DIR = os.path.dirname(os.path.abspath(__file__))
         data_path = os.path.join(DIR, path)
         self.data = h5py.File(data_path, 'r')
-        keys = list(data.keys())
+        keys = list(self.data.keys())
+        keys.remove('forward_233')
         random.Random(0).shuffle(keys)
         TRAIN_SIZE = int(0.8 * len(keys))
         TEST_SIZE = int(0.1 * len(keys))
+        self.device = device
         self.time_steps_per_forward = time_steps_per_forward
 
         if mode == 'train':
@@ -51,9 +53,9 @@ class SOMAdata(Dataset):
         # get the key idx 
         key_idx = int(index / (self.time_steps_per_forward - 1))
         in_group_idx = index % (self.time_steps_per_forward - 1)
-        data = self.data[self.keys[key_idx]][...]
+        data = self.data[self.keys[key_idx]]['month_0'][...]
         x, y = self.preprocess(data)
-        return torch.from_numpy(x[in_group_idx]).float(), torch.from_numpy(y[in_group_idx]).float()
+        return torch.from_numpy(x[in_group_idx]).float().to(self.device), torch.from_numpy(y[in_group_idx]).float().to(self.device)
 
 
 class MultiStepData(Dataset):

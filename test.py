@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 from AdjointMatchingNN.model.ResidualBlock import ResidualBlock3D
 from AdjointMatchingNN.model.ForwardSurrogate import ResnetSurrogate, OneStepSolve3D
 from AdjointMatchingNN.utils.losses import Losses
-from AdjointMatchingNN.utils.data import MultiStepData
+from AdjointMatchingNN.utils.data import SOMAdata
 from AdjointMatchingNN.train.trainer import Trainer
 
 if __name__ == "__main__":
@@ -31,9 +31,18 @@ if __name__ == "__main__":
     #               learning_rate=0.01)
 
     import numpy as np
-    data = np.zeros(((1, 15, 185, 309, 60)))
-    data = torch.from_numpy(data).float()
+    # data = np.zeros(((1, 15, 185, 309, 60)))
+    # data = torch.from_numpy(data).float()
 
-    net = OneStepSolve3D(15, 15, 20, 3)
-    a = net(data)
-    print(a.shape)
+    # net = OneStepSolve3D(15, 15, 20, 3)
+    # a = net(data)
+    # print(a.shape)
+
+    ds = SOMAdata(path='/pscratch/sd/y/yixuans/datatset/SOMA/varyGM/thedataset.hdf5', mode='train', device=torch.device('cpu'))
+    print(ds.__len__())
+    dl = DataLoader(ds, batch_size=36)
+    for x, y in dl:
+        print(np.isnan(x.cpu().numpy()).any())
+        print(np.isnan(y.cpu().numpy().any()))
+        print(x.max())
+        
