@@ -23,6 +23,6 @@ class Logger:
         time = datetime.now().strftime('%Y-%M-%D-%H')
         if not os.path.exists('./logs/'):
             os.makedirs('./logs/')
-        with open('./logs/' + time + '_logs.pkl') as f:
+        with open('./logs/' + time + '_logs.pkl', 'wb') as f:
             pickle.dump(self.logger, f)
         print('Saving the training logs...')

@@ -2,7 +2,7 @@ import numpy as np
 import pickle
 import argparse
 from phi.tf.flow import *
-from AdjointMatchingNN.model.adjoint_matching import DifferentiableBurgersSolver
+from deep_adjoint.model.adjoint_matching import DifferentiableBurgersSolver
 
 
 def main(args):

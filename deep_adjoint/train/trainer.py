@@ -9,7 +9,7 @@ class Trainer:
     '''
     Basic trainer class
     '''
-    def __init__(self, net, optimizer_name, loss_name ) -> None:
+    def __init__(self, net, optimizer_name, loss_name, dual_train=False) -> None:
         self.net = net
         if optimizer_name == "Adam":
             self.optimizer = torch.optim.Adam
@@ -20,6 +20,8 @@ class Trainer:
             self.device = torch.device("cuda")  # Use CUDA device
         else:
             self.device = torch.device("cpu")
+
+        self.dual_train = dual_train
 
     def train(self, train,
               val,
@@ -38,25 +40,34 @@ class Trainer:
         val_loader = DataLoader(val, batch_size=10)
 
         for val in val_loader:
-            x_val, y_val = val
+            if self.dual_train:
+                x_val, y_val = val
+                y_val, adj_val = y_val
+            else:
+                x_val, y_val = val
             break
 
         print("Starts training...")
         for ep in range(epochs):
             running_loss = []
             for x_train, y_train in tqdm(train_loader):
+                if self.dual_train:
+                    y_train, adj_train = y_train
                 optimizer.zero_grad()
                 out = self.net(x_train)
-                print(np.isnan(x_train.detach().cpu().numpy()).any())
-                print(np.isnan(out.detach().cpu().numpy()).any())
-                batch_loss = self.ls_fn(y_train, out)
+                if self.dual_train:
+                    batch_loss = self.ls_fn(y_train, out, adj_train)
+                else:
+                    batch_loss = self.ls_fn(y_train, out)
                 batch_loss.backward()
                 running_loss.append(batch_loss.detach().cpu().numpy())
-                print(running_loss[-1])
                 optimizer.step()
             with torch.no_grad():
                 val_out = self.net(x_val) 
-                val_loss = self.ls_fn(y_val, val_out)
+                if self.dual_train:
+                    val_loss = self.ls_fn(y_val, val_out, adj_val)
+                else:
+                    val_loss = self.ls_fn(y_val, val_out)
             self.logger.record('epoch', ep+1)
             self.logger.record('train_loss', np.mean(running_loss))
             self.logger.record('val_loss', val_loss.item())

@@ -1,7 +1,7 @@
 from VJPMatching import MLP, Trainer
-from AdjointMatchingNN.utils.data import split_data, combine_burgers_data
-from AdjointMatchingNN.utils.metrics import mean_squared_error, r2
-from AdjointMatchingNN.utils.scaler import StandardScaler
+from deep_adjoint.utils.data import split_data, combine_burgers_data
+from deep_adjoint.utils.metrics import mean_squared_error, r2
+from deep_adjoint.utils.scaler import StandardScaler
 import pickle
 import optax
 import numpy as np
@@ -53,10 +53,10 @@ with open('./logs/logger_06-15-09_AdjointMatchingNN_lr0.0001_alpha1', 'rb') as f
     logger = pickle.load(f)
 
 
-train, val, test = split_data(x, y, adj, shuffle_all=True)
-scaler = StandardScaler(train['x'])
+# train, val, test = split_data(x, y, adj, shuffle_all=True)
+# scaler = StandardScaler(train['x'])
 x = test['x'][:2000]
-net = MLP([200]*5, in_dim=train['x'].shape[1], out_dim=train['y'].shape[1], act_fn='tanh', scaler=scaler)
+# net = MLP([200]*5, in_dim=train['x'].shape[1], out_dim=train['y'].shape[1], act_fn='tanh', scaler=scaler)
 
 params = logger['final_params']
 test_pred = net.apply(params, x)
@@ -67,7 +67,7 @@ v = test_pred - test['y'][:2000]
 
 print(x.shape, v.shape)
 
-# pred_adj = net.full_Jacobian(params, x)
+pred_adj_p = net.full_Jacobian(params, x)[:, -1]
 pred_adj = net.nn_adjoint(params, x, v)
 # print(pred_adj.shape)
 true_adj = true_vjp(v, test['adj'][:2000])
@@ -82,3 +82,5 @@ print('The test MSE is {:.4f}'.format(mean_squared_error(test['y'][:2000], test_
 print('The test R2 is {:.4f}'.format(r2(test['y'][:2000], test_pred)))
 print('The test adj mse is {:.4f}'.format(mean_squared_error(true_adj, pred_adj)))
 print('The test adj R2 is {:4f}'.format(r2(true_adj, pred_adj)))
+
+print('the jac wrt the parameter R2 is {:.4f}'.format(r2(test['adj'][:2000][:, -1], pred_adj_p)))
