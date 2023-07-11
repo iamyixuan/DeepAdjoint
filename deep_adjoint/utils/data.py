@@ -59,8 +59,14 @@ class SOMAdata(Dataset):
 
 
 class MultiStepData(Dataset):
-    def __init__(self, data_name='burgers', path='./AdjointMatchingNN/Data/mixed_nu/'):
+    def __init__(self, data_name='burgers', path='./deep_adjoint/Data/mixed_nu/', mode='Train'):
         super(MultiStepData, self).__init__()
+
+        if mode == 'val':
+            path = path + 'val/'
+        elif mode == 'test':
+            pass
+
         if data_name == 'burgers':
             data = MultiStepBurgers(path)
         self.sol = data.sol

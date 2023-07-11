@@ -1,10 +1,10 @@
 import torch
 from torch.utils.data import DataLoader
-from AdjointMatchingNN.model.ResidualBlock import ResidualBlock3D
-from AdjointMatchingNN.model.ForwardSurrogate import ResnetSurrogate, OneStepSolve3D
-from AdjointMatchingNN.utils.losses import Losses
-from AdjointMatchingNN.utils.data import SOMAdata
-from AdjointMatchingNN.train.trainer import Trainer
+from deep_adjoint.model.ResidualBlock import ResidualBlock3D
+from deep_adjoint.model.ForwardSurrogate import ResnetSurrogate, OneStepSolve3D
+from deep_adjoint.utils.losses import Losses
+from deep_adjoint.utils.data import SOMAdata
+from deep_adjoint.train.trainer import Trainer
 
 if __name__ == "__main__":
     # net = ResnetSurrogate(

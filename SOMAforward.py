@@ -3,9 +3,9 @@ import torch
 import numpy as np
 import argparse
 
-from AdjointMatchingNN.model.ForwardSurrogate import OneStepSolve3D
-from AdjointMatchingNN.utils.data import SOMAdata
-from AdjointMatchingNN.train.trainer import Trainer
+from deep_adjoint.model.ForwardSurrogate import OneStepSolve3D
+from deep_adjoint.utils.data import SOMAdata
+from deep_adjoint.train.trainer import Trainer
 
 def run(args):
     if torch.cuda.is_available():

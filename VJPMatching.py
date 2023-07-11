@@ -8,8 +8,8 @@ from datetime import datetime
 from jax.config import config
 from functools import partial
 from jax import vmap, random
-from AdjointMatchingNN.utils.scaler import MinMaxScaler
-from AdjointMatchingNN.utils.metrics import r2
+from deep_adjoint.utils.scaler import MinMaxScaler
+from deep_adjoint.utils.metrics import r2
 
 
 class MLP:
@@ -262,8 +262,8 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    from AdjointMatchingNN.utils.data import split_data, combine_burgers_data
-    from AdjointMatchingNN.utils.scaler import StandardScaler
+    from deep_adjoint.utils.data import split_data, combine_burgers_data
+    from deep_adjoint.utils.scaler import StandardScaler
     import os
     import argparse
 
