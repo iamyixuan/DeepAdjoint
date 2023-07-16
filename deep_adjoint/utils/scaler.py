@@ -10,12 +10,12 @@ class MinMaxScaler:
         self.max_ = max_
 
     def transform(self, x):
-        d_diff = self.data_max - self.data_min + 1e-6
+        d_diff = self.data_max - self.data_min + 1e-8
         s_diff = self.max_ - self.min_
         return (x - self.data_min) / d_diff * s_diff + self.min_
 
     def inverse_transform(self, x):
-        d_diff = self.data_max - self.data_min + 1e-6
+        d_diff = self.data_max - self.data_min + 1e-8
         s_diff = self.max_ - self.min_
         return (x - self.min_) / s_diff * d_diff + self.data_min
 

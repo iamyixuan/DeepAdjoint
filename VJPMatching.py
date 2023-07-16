@@ -94,6 +94,7 @@ class Trainer:
         learning_rate,
         optimizer,
         if_full_Jacobian="False",
+        if_p_only="False"
     ):
         """Trainer for the adjoint matching neural network
         args:
@@ -110,6 +111,7 @@ class Trainer:
         self.learning_rate = learning_rate
         self.optimizer = optimizer(learning_rate=learning_rate)
         self.if_full_Jacobian = if_full_Jacobian
+        self.if_p_only = if_p_only
 
     def loss(self, params, x, y, adj_y, alpha):
         # calcuate vector-true jacobian product
@@ -129,8 +131,12 @@ class Trainer:
 
     def loss_full_Jacobian(self, params, x, y, adj_y, alpha):
         pred = self.net.apply(params, x)
-        adj = self.net.full_Jacobian(params, x)[..., :-1]
-        adj_y = adj_y[..., :-1]
+        adj = self.net.full_Jacobian(params, x)
+        if self.if_p_only == "False":
+            adj_y = adj_y[..., :]
+        else:
+            adj_y = adj_y[..., -1]
+            adj = adj[..., -1]
         adj_loss = jnp.mean((adj - adj_y) ** 2)
         totLoss = jnp.mean((pred - y) ** 2) + alpha * adj_loss
         # totLoss = adj_loss
@@ -177,14 +183,15 @@ class Trainer:
         best_val = jnp.inf
         patience = 1000
         tol = 0
-        running_alpha = 0
+        running_alpha = 10
         for ep in range(self.num_epochs):
             print("alpha is ", running_alpha)
             train_running_ls = []
             train_running_r2 = []
             train_running_adj_ls = []
             if (ep + 1) % 10 == 0 and running_alpha <= alpha:
-                running_alpha += 1  # alpha/10.
+                pass
+                # running_alpha += 1  # alpha/10.
             for i in range(len(x_train) // self.batch_size):
                 x_batch = x_train[i * self.batch_size : (i + 1) * self.batch_size]
                 y_batch = y_train[i * self.batch_size : (i + 1) * self.batch_size]
@@ -233,7 +240,7 @@ class Trainer:
                 )
             )
             print(
-                "training adj loss {:.4f} validation adj loss {:.4f}".format(
+                "training adj loss {:.6f} validation adj loss {:.6f}".format(
                     logger["train_adj_loss"][-1], logger["val_adj_loss"][-1]
                 )
             )
@@ -298,8 +305,9 @@ if __name__ == "__main__":
         jrav = np.concatenate([jrav, j_beta[..., np.newaxis]], axis=-1)
         train, val, test = split_data(inputs, uout, jrav, shuffle_all=True)
     elif args.problem == "Burgers":
-        x, y, adj = combine_burgers_data("./AdjointMatchingNN//Data/mixed_nu/")
+        x, y, adj = combine_burgers_data("./deep_adjoint/Data/mixed_nu/")
         train, val, test = split_data(x, y, adj, shuffle_all=True)
+
 
     scaler = StandardScaler(train["x"])
 
@@ -316,6 +324,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         learning_rate=args.lr,
         optimizer=optax.adam,
-        if_full_Jacobian="False",
+        if_full_Jacobian="True",
+        if_p_only="True"
     )
     net_params = sup.train_(net.params, train, val, args.a, now_str)

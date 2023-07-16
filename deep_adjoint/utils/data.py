@@ -6,6 +6,50 @@ import os
 import torch
 import h5py
 from torch.utils.data import Dataset
+from .utils import split_idx
+
+class GlacierData(Dataset):
+    def __init__(self, path, mode='train', portion='u'):
+        super().__init__()
+        # DIR = os.path.dirname(os.path.abspath(__file__))
+        # path = os.path.join(DIR, path)
+        data = np.load(path) # use the first half for training
+        self.portion = portion
+        self.inputs = data['inputs']
+        self.uout = data['uout']
+        self.jac_beta = data['jac_beta']
+        self.jac_u = data['jac_u']
+
+        train_idx, val_idx, test_idx = split_idx(self.inputs.shape[0])
+        if mode == 'train':
+            self.inputs = self.inputs[train_idx]
+            self.uout = self.uout[train_idx]
+            self.jac_beta = self.jac_beta[train_idx]
+            self.jac_u = self.jac_u[train_idx]
+
+        elif mode == 'val':
+            self.inputs = self.inputs[val_idx]
+            self.uout = self.uout[val_idx]
+            self.jac_beta = self.jac_beta[val_idx]
+            self.jac_u = self.jac_u[val_idx]
+        elif mode == 'test':
+            self.inputs = self.inputs[test_idx]
+            self.uout = self.uout[test_idx]
+            self.jac_beta = self.jac_beta[test_idx]
+            self.jac_u = self.jac_u[test_idx]
+    def __len__(self):
+        return self.inputs.shape[0]
+    def __getitem__(self, idx):
+        x = torch.from_numpy(self.inputs[idx]).float()
+        y = torch.from_numpy(self.uout[idx]).float()
+        if self.portion == 'u':
+            adj = torch.from_numpy(self.jac_u)[idx].float()
+        elif self.portion == 'p':
+            adj = torch.from_numpy(self.jac_beta)[idx].float()
+        else:
+            raise Exception(f"Portion type {self.portion} not recognized!")
+        return x, (y, adj)
+    
 
 
 class SOMAdata(Dataset):
