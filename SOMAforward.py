@@ -12,14 +12,14 @@ def run(args):
         device = torch.device("cuda")  # Use CUDA device
     else:
         device = torch.device("cpu")
-    net = OneStepSolve3D(in_ch=15,
-                        out_ch=14, 
+    net = OneStepSolve3D(in_ch=17,
+                        out_ch=16, 
                         hidden=args.hidden, 
                         num_res_block=args.num_res_block)
     trainer = Trainer(net=net, 
                       optimizer_name='Adam', 
                       loss_name='MSE')
-    data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/varyGM/thedataset.hdf5'
+    data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/varyGM/thedataset2.hdf5'
     train_set = SOMAdata(path=data_path, mode='train', device=device) 
     val_set = SOMAdata(path=data_path, mode='val', device=device) 
     test_set = SOMAdata(path=data_path, mode='test', device=device) 

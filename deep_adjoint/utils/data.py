@@ -53,7 +53,7 @@ class GlacierData(Dataset):
 
 
 class SOMAdata(Dataset):
-    def __init__(self, path, mode, device, time_steps_per_forward=3):
+    def __init__(self, path, mode, device, time_steps_per_forward=30):
         '''path: the hd5f file path, can be relative path
         mode: ['trian', 'val', 'test']
         '''
@@ -62,9 +62,8 @@ class SOMAdata(Dataset):
         data_path = os.path.join(DIR, path)
         self.data = h5py.File(data_path, 'r')
         keys = list(self.data.keys())
-        keys.remove('forward_233')
         random.Random(0).shuffle(keys)
-        TRAIN_SIZE = int(0.8 * len(keys))
+        TRAIN_SIZE = int(0.6 * len(keys))
         TEST_SIZE = int(0.1 * len(keys))
         self.device = device
         self.time_steps_per_forward = time_steps_per_forward
@@ -80,24 +79,29 @@ class SOMAdata(Dataset):
 
     def preprocess(self, x):
         '''Prepare data as the input-output pair for a single forward run
-        x has the shape of (3, 185, 309, 60, 15)
-        the goal is to first move the ch axis to the second -> (3, 15, 185, 309, 60)
-        then create input output pair where the input shape is (1, 15, 185, 309, 60, 15) and the output shape is (1, 14, 185, 309, 60)
+        x has the shape of (30, 60, 100, 100, 17)
+        the goal is to first move the ch axis to the second -> (30, 17, 60, 100, 100)
+        then create input output pair where the input shape is (1, 17, 60, 100, 100) and the output shape is (1, 16, 60, 100, 100)
         idx 14 is the varying parameter for the input.
+
         '''
+        mask1 = x < -1e16
+        mask2 = x > 1e16
+        x[mask1] = 0
+        x[mask2] = 0
         x = np.transpose(x, axes=[0, 4, 1, 2, 3])
         x_in = x[:-1]
-        x_out = x[1:, :-1, ...] 
+        x_out = x[1:, :-1, ...]  # excluding the varying parameter (b/c it is part of the input)
         return (x_in, x_out)
 
     def __len__(self):
-        return int(len(self.keys) * (self.time_steps_per_forward - 1))
+        return len(self.keys) * (self.time_steps_per_forward - 1) # b/c n  time steps can create n-1 input-output pairs
         
     def __getitem__(self, index):
         # get the key idx 
         key_idx = int(index / (self.time_steps_per_forward - 1))
         in_group_idx = index % (self.time_steps_per_forward - 1)
-        data = self.data[self.keys[key_idx]]['month_0'][...]
+        data = self.data[self.keys[key_idx]][...]
         x, y = self.preprocess(data)
         return torch.from_numpy(x[in_group_idx]).float().to(self.device), torch.from_numpy(y[in_group_idx]).float().to(self.device)
 
