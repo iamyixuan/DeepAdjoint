@@ -30,8 +30,10 @@ class Losses:
         return torch.permute(lam, (1, 0, 2))
 
 
-    def MSE(self, true, pred):
+    def MSE(self, true, pred, mask=None):
         loss = torch.pow(true - pred, 2)
+        if mask is not None:
+            loss *= mask
         return torch.mean(loss)
 
     def LagrangianLoss(self, true, pred, adj):
@@ -53,4 +55,4 @@ class Losses:
             return self.LagrangianLoss
         else:
             raise Exception('Loss name not recognized!')
-        
+

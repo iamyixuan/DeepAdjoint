@@ -11,3 +11,6 @@ saved_model/
 checkpoints/
 _job_history/
 SOMA_mask.pkl
+pred_results/
+*.pyc
+__pycache__/

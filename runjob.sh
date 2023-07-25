@@ -5,12 +5,13 @@
 #SBATCH --qos=regular
 #SBATCH --nodes=1
 #SBATCH --constraint=gpu
-#SBATCH --gpus 1
+#SBATCH --gpus 4
 #SBATCH --time 12:00:00 
 
 
 conda activate deeplearning
 
-python SOMAforward.py -batch_size 16\
-                      -epochs 200\
-                      -lr 0.0005
+python SOMAforward.py -batch_size 32\
+                      -epochs 500\
+                      -lr 0.0005\
+                      -model_name SOMA-ResNet-no-mask

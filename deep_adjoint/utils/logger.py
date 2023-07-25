@@ -5,7 +5,7 @@ from datetime import datetime
 
 
 class Logger:
-    def __init__(self) -> None:
+    def __init__(self, path) -> None:
         self.logger = {
             'epoch': [],
             'train_loss': [],
@@ -13,6 +13,11 @@ class Logger:
             'train_metrics': [],
             'val_metrics': []
         } 
+        self.path = path
+
+        if not os.path.exists(self.path + 'logs/'):
+            os.makedirs(self.path + 'logs/')
+
     def record(self, key, value):
         if key not in self.logger.keys():
             self.logger[key] = []
@@ -21,10 +26,7 @@ class Logger:
     def print(self):
         print('Epoch: %d , Training loss: %.4f, Validation loss: %.4f' % (self.logger['epoch'][-1], self.logger['train_loss'][-1], self.logger['val_loss'][-1]))
 
-    def finish(self):
-        time = datetime.now().strftime('%Y-%m-%d-%H')
-        if not os.path.exists('./logs/'):
-            os.makedirs('./logs/')
-        with open('./logs/' + time + '_logs.pkl', 'wb') as f:
+    def save(self):
+        with open(self.path + '/logs/logs.pkl', 'wb') as f:
             pickle.dump(self.logger, f)
         print('Saving the training logs...')

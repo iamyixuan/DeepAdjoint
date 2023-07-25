@@ -7,6 +7,7 @@ import torch
 import h5py
 from torch.utils.data import Dataset
 from .utils import split_idx
+from .scaler import ChannelMinMaxScaler
 
 class GlacierData(Dataset):
     def __init__(self, path, mode='train', portion='u'):
@@ -53,20 +54,41 @@ class GlacierData(Dataset):
 
 
 class SOMAdata(Dataset):
-    def __init__(self, path, mode, device, time_steps_per_forward=30):
+    def __init__(self, path, mode, gpu_id, time_steps_per_forward=30, transform=True):
         '''path: the hd5f file path, can be relative path
         mode: ['trian', 'val', 'test']
         '''
         super(SOMAdata, self).__init__()
+
         DIR = os.path.dirname(os.path.abspath(__file__))
         data_path = os.path.join(DIR, path)
         self.data = h5py.File(data_path, 'r')
         keys = list(self.data.keys())
+
         random.Random(0).shuffle(keys)
         TRAIN_SIZE = int(0.6 * len(keys))
         TEST_SIZE = int(0.1 * len(keys))
-        self.device = device
+
+        self.gpu_id = gpu_id
         self.time_steps_per_forward = time_steps_per_forward
+
+        sample_data = self.data['forward_0'][...]
+
+        self.mask1 = sample_data < -1e16
+        self.mask2 = sample_data > 1e16
+
+        sample_data[self.mask1] = np.nan
+        sample_data[self.mask2] = np.nan
+
+        self.scaler = ChannelMinMaxScaler(sample_data, (0, 1, 2, 3))
+        self.transform = transform
+
+        # create a mask for loss calculationg
+        self.loss_mask = np.logical_or(self.mask1, self.mask2)[0].astype(int)
+        self.loss_mask = np.transpose(self.loss_mask, axes=[3, 0, 1, 2])[:-1, ...]
+        self.loss_mask = np.expand_dims(self.loss_mask, axis=0) # expand batch dimension for broadcasting
+        self.loss_mask = torch.from_numpy(self.loss_mask).float()
+        
 
         if mode == 'train':
             self.keys = keys[:TRAIN_SIZE]
@@ -77,21 +99,35 @@ class SOMAdata(Dataset):
         else:
             raise Exception(f'Invalid mode: {mode}, please select from "train", "val", and "test".')
 
-    def preprocess(self, x):
+    def preprocess(self, x, y):
         '''Prepare data as the input-output pair for a single forward run
-        x has the shape of (30, 60, 100, 100, 17)
-        the goal is to first move the ch axis to the second -> (30, 17, 60, 100, 100)
-        then create input output pair where the input shape is (1, 17, 60, 100, 100) and the output shape is (1, 16, 60, 100, 100)
+        x has the shape of (60, 100, 100, 17)
+        the goal is to first move the ch axis to the second -> (17, 60, 100, 100)
+        then create input output pair where the input shape is (17, 60, 100, 100) and the output shape is (16, 60, 100, 100)
         idx 14 is the varying parameter for the input.
 
         '''
-        mask1 = x < -1e16
-        mask2 = x > 1e16
-        x[mask1] = 0
-        x[mask2] = 0
-        x = np.transpose(x, axes=[0, 4, 1, 2, 3])
-        x_in = x[:-1]
-        x_out = x[1:, :-1, ...]  # excluding the varying parameter (b/c it is part of the input)
+        assert len(x.shape) == 4, "Incorrect data shape!"
+
+        x[self.mask1[0]] = 0 # every field has the same mask so use the first one and keep the dimension.
+        x[self.mask2[0]] = 0 
+        y[self.mask1[0]] = 0
+        y[self.mask2[0]] = 0
+
+
+
+        if self.transform:
+            d = np.stack((x, y), axis=0)
+            d = self.scaler.transform(d)
+            x = d[0]
+            y = d[1]
+        
+        x_in = np.transpose(x, axes=[3, 0, 1, 2])
+        x_out = np.transpose(y, axes=[3, 0, 1, 2])[:-1, ...]
+
+
+        # x_in = x[:-1]
+        # x_out = x[1:, :-1, ...]  # excluding the varying parameter (b/c it is part of the input)
         return (x_in, x_out)
 
     def __len__(self):
@@ -101,9 +137,11 @@ class SOMAdata(Dataset):
         # get the key idx 
         key_idx = int(index / (self.time_steps_per_forward - 1))
         in_group_idx = index % (self.time_steps_per_forward - 1)
-        data = self.data[self.keys[key_idx]][...]
-        x, y = self.preprocess(data)
-        return torch.from_numpy(x[in_group_idx]).float().to(self.device), torch.from_numpy(y[in_group_idx]).float().to(self.device)
+        data_x = self.data[self.keys[key_idx]][in_group_idx]
+        data_y = self.data[self.keys[key_idx]][in_group_idx + 1]
+        x, y = self.preprocess(data_x, data_y)
+        assert not np.any(np.isnan(x)) and not np.any(np.isnan(y)), "Data contains NaNs!!!"
+        return torch.from_numpy(x).float(), torch.from_numpy(y).float()
 
 
 class MultiStepData(Dataset):
