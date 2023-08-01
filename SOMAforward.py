@@ -36,12 +36,13 @@ def run(rank, world_size, args):
                   epochs=args.epochs,
                   batch_size=args.batch_size,
                   learning_rate=args.lr,
-                  model_name=args.model_name)
+                  model_name=args.model_name,
+                  mask=args.mask)
         destroy_process_group()
     else:
         true, pred, gm = predict(net=net, test_data=test_set, gpu_id=rank,
-                     checkpoint='./checkpoints/2023-07-24_SOMA-ResNet-loss-mask/model_saved_ep_380')
-        with open('/global/cfs/projectdirs/m4259/yixuansun/2023-07-25-true_pred.pkl', 'wb') as f:
+                     checkpoint='./checkpoints/2023-07-26_SOMA-ResNet-mask/model_saved_ep_380')
+        with open('/pscratch/sd/y/yixuans/2023-07-27-true_pred-masked.pkl', 'wb') as f:
             true_pred = {'true': true, 'pred': pred, 'gm': gm}
             pickle.dump(true_pred, f)
 
@@ -54,6 +55,7 @@ if __name__ == "__main__":
     parser.add_argument('-batch_size', default=32, type=int)
     parser.add_argument('-lr', default=0.001, type=float)
     parser.add_argument('-train', default='True', type=str)
+    parser.add_argument('-mask', default=None, type=str)
     parser.add_argument('-model_name', type=str, default='test')
     args = parser.parse_args()
 

@@ -73,6 +73,7 @@ class Trainer:
         val_loader = DataLoader(val, batch_size=10, sampler=DistributedSampler(val))
 
         if mask is not None:
+            print("Masking the loss...")
             mask = train.loss_mask.to(self.gpu_id)
 
         for val in val_loader:

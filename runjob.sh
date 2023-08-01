@@ -14,4 +14,5 @@ conda activate deeplearning
 python SOMAforward.py -batch_size 32\
                       -epochs 500\
                       -lr 0.0005\
-                      -model_name SOMA-ResNet-no-mask
+                      -model_name SOMA-ResNet-mask\
+                      -mask True

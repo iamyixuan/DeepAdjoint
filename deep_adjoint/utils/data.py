@@ -83,10 +83,11 @@ class SOMAdata(Dataset):
         self.scaler = ChannelMinMaxScaler(sample_data, (0, 1, 2, 3))
         self.transform = transform
 
-        # create a mask for loss calculationg
-        self.loss_mask = np.logical_or(self.mask1, self.mask2)[0].astype(int)
-        self.loss_mask = np.transpose(self.loss_mask, axes=[3, 0, 1, 2])[:-1, ...]
-        self.loss_mask = np.expand_dims(self.loss_mask, axis=0) # expand batch dimension for broadcasting
+        # create a mask for loss calculation
+        self.loss_mask = np.logical_or(self.mask1, self.mask2)[0,0,:,:,0] # mask only in x,y plane thus size of [100, 100] this will broadcast in element wise product
+        self.loss_mask = np.array(~self.loss_mask, dtype=int) # True - 0; False - 1
+        # self.loss_mask = np.transpose(self.loss_mask, axes=[3, 0, 1, 2])[:-1, ...]
+        # self.loss_mask = np.expand_dims(self.loss_mask, axis=0) # expand batch dimension for broadcasting
         self.loss_mask = torch.from_numpy(self.loss_mask).float()
         
 
