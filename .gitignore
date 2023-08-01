@@ -14,3 +14,4 @@ SOMA_mask.pkl
 pred_results/
 *.pyc
 __pycache__/
+tmp/
