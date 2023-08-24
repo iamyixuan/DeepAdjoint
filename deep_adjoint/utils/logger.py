@@ -15,8 +15,11 @@ class Logger:
         } 
         self.path = path
 
-        if not os.path.exists(self.path + 'logs/'):
-            os.makedirs(self.path + 'logs/')
+        try:
+            if not os.path.exists(os.path.join(self.path, 'logs/')):
+                os.makedirs(os.path.join(self.path, 'logs/'))
+        except:
+            pass
 
     def record(self, key, value):
         if key not in self.logger.keys():

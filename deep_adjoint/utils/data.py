@@ -8,6 +8,56 @@ import h5py
 from torch.utils.data import Dataset
 from .utils import split_idx
 from .scaler import ChannelMinMaxScaler
+from sklearn.preprocessing import MinMaxScaler
+
+
+
+class SOMA_PCA_Data(Dataset):
+    def __init__(self, path, mode, hist_len=1) -> None:
+        super().__init__()
+        f = h5py.File(path, 'r')
+        data = f['PCA_data'][:]
+        self.var_idx = [3, 6, 10, 14, 15] 
+        self.scaler = MinMaxScaler()
+
+        train_idx, val_idx, test_idx = split_idx(data.shape[0])
+        self.scaler.fit(data[train_idx][..., self.var_idx].reshape(len(train_idx), -1)) # fit a minmax scaler using the training data
+
+        if mode == 'train':
+            self.data = data[train_idx][..., self.var_idx].reshape(len(train_idx), -1)
+        elif mode == 'val':
+            self.data = data[val_idx][..., self.var_idx].reshape(len(val_idx), -1)
+        elif mode == 'test':
+            self.data = data[test_idx][..., self.var_idx].reshape(len(test_idx), -1)
+        else:
+            raise NameError(f"Mode name {mode} not found!")
+
+        self.data = self.scaler.transform(self.data) 
+        
+        self.x, self.y = self.prepare_data(hist_len=hist_len)
+        if self.x.shape[1] == 1:
+            self.x = np.squeeze(self.x)
+
+    def prepare_data(self, hist_len=1):
+        x = []
+        y = []
+        for i in range(self.data.shape[0] - hist_len):
+            x.append(self.data[i:i+hist_len])
+            y.append(self.data[i+hist_len])
+        
+        x = np.stack(x, axis=0)
+        y = np.stack(y, axis=0)
+        return x, y
+    
+    def __len__(self):
+        return self.x.shape[0]
+    
+    def __getitem__(self, index):
+        x = torch.from_numpy(self.x[index]).float()
+        y = torch.from_numpy(self.y[index]).float()
+        return x, y
+
+
 
 class GlacierData(Dataset):
     def __init__(self, path, mode='train', portion='u'):
@@ -122,9 +172,10 @@ class SOMAdata(Dataset):
             d = self.scaler.transform(d)
             x = d[0]
             y = d[1]
-        
+
+        var_idx = [3, 6, 10, 14, 15] 
         x_in = np.transpose(x, axes=[3, 0, 1, 2])
-        x_out = np.transpose(y, axes=[3, 0, 1, 2])[:-1, ...]
+        x_out = np.transpose(y, axes=[3, 0, 1, 2])[var_idx, ...]
 
 
         # x_in = x[:-1]

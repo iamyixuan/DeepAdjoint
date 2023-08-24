@@ -12,6 +12,7 @@ from torch.distributed import init_process_group, destroy_process_group
 
 
 from ..utils.losses import Losses
+from ..utils.metrics import get_metrics
 from ..utils.logger import Logger
 
 
@@ -51,24 +52,35 @@ class Trainer:
               learning_rate,
               save_freq=10,
               model_name='test',
-              mask=None):
+              mask=None,
+              **kwargs):
 
         '''
         args:
             train: training dataset
             val: validation dataset
         '''
-
-        if not os.path.exists(f'./checkpoints/{self.now}_{model_name}/'):
-            print("Creating model saving folder...")
-            os.makedirs(f'./checkpoints/{self.now}_{model_name}/')
         
+        try:
+            if not os.path.exists(f'./checkpoints/{self.now}_{model_name}/'):
+                print("Creating model saving folder...")
+                os.makedirs(f'./checkpoints/{self.now}_{model_name}/')
+        except:
+            pass
+
         self.logger = Logger(f'./checkpoints/{self.now}_{model_name}/')
 
+        if "load_model" in kwargs:
+            if kwargs.get('load_model') == True:
+                print('Loading pretrained model...')
+                assert 'model_path' in kwargs, 'Provide a saved model path!'
+                model_path = kwargs.get('model_path')
+                self.net.module.load_state_dict(torch.load(model_path))
 
         # self.net.to(self.device)
         self.net.train()
         optimizer = self.optimizer(self.net.parameters(), lr=learning_rate)
+        scheduler = torch.optim.lr_scheduler.StepLR (optimizer , 100 , gamma=0.1, verbose=True)
         train_loader = DataLoader(train, batch_size=batch_size, sampler=DistributedSampler(train))
         val_loader = DataLoader(val, batch_size=10, sampler=DistributedSampler(val))
 
@@ -90,6 +102,7 @@ class Trainer:
         print("Starts training...")
         for ep in range(epochs):
             running_loss = []
+            running_metrics = []
             for x_train, y_train in tqdm(train_loader):
                 x_train = x_train.to(self.gpu_id)
                 y_train = y_train.to(self.gpu_id)
@@ -102,15 +115,19 @@ class Trainer:
                     batch_loss = self.ls_fn(y_train, out, adj_train)
                 else:
                     batch_loss = self.ls_fn(y_train, out, mask=mask)
+                    batch_metric = get_metrics(y_train.detach().cpu().numpy(), out.detach().cpu().numpy())
                 batch_loss.backward()
                 running_loss.append(batch_loss.detach().cpu().numpy())
+                running_metrics.append(batch_metric)
                 optimizer.step()
+            scheduler.step()
             with torch.no_grad():
                 val_out = self.net(x_val) 
                 if self.dual_train:
                     val_loss = self.ls_fn(y_val, val_out, adj_val)
                 else:
                     val_loss = self.ls_fn(y_val, val_out, mask=mask)
+                    val_metrics = get_metrics(y_val.detach().cpu().numpy(), val_out.detach().cpu().numpy())
             
             if self.gpu_id == 0 and ep % save_freq == 0:
                 torch.save(self.net.module.state_dict(), f'./checkpoints/{self.now}_{model_name}/model_saved_ep_{ep}')
@@ -118,6 +135,8 @@ class Trainer:
             self.logger.record('epoch', ep+1)
             self.logger.record('train_loss', np.mean(running_loss))
             self.logger.record('val_loss', val_loss.item())
+            self.logger.record('train_metrics', np.mean(np.array(running_metrics), axis=0))
+            self.logger.record('val_metrics', val_metrics)
             self.logger.print()
             self.logger.save()
             
@@ -147,6 +166,39 @@ def predict(net, gpu_id, test_data, checkpoint=None):
     # y_pred = np.concatenate(y_pred)
     # gm = np.asarray(gm)
     return y_true, y_pred, gm
+
+def pred_rollout(net, gpu_id, test_data, checkpoint=None):
+    MAX_STEPS = 29
+    ROLLOUT_STEPS = 29 # needs to be less than or equal to the max steps
+    test_loader = DataLoader(test_data, batch_size=MAX_STEPS) 
+    y_true = []
+    y_pred = []
+    net.eval()
+    net.to(gpu_id)
+    if checkpoint is not None:
+        net.load_state_dict(torch.load(checkpoint))
+    for x, y in test_loader:
+        x = x.to(gpu_id)
+        y = y.to(gpu_id)
+        temp_yp = []
+        temp_yt = []
+        for t in range(ROLLOUT_STEPS):
+            with torch.no_grad():
+                if t == 0:
+                    pred = net(x[0:1])
+                    temp_yp.append(pred)
+                    temp_yt.append(y[0:1])
+                else:
+                    pred = net(temp_yp[-1])
+                    temp_yp.append(pred)
+                    temp_yt.append(y[t:t+1])
+        y_pred.append([y_p.detach().cpu().numpy() for y_p in temp_yp])
+        y_true.append([y_t.detach().cpu().numpy() for y_t in temp_yt])
+    
+    return np.array(y_true), np.array(y_pred)
+    
+
+
 
 
 

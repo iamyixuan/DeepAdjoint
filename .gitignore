@@ -16,3 +16,4 @@ pred_results/
 __pycache__/
 tmp/
 saved/
+*.pkl

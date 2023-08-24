@@ -1,18 +1,31 @@
-import jax.numpy as jnp
+# import jax.numpy as jnp
+import numpy as np
 
 
-def mean_squared_error(true, pred):
-    return jnp.mean(jnp.power(true - pred, 2))
-
+# def mean_squared_error(true, pred):
+#     return jnp.mean(jnp.power(true - pred, 2))
+def get_metrics(true, pred):
+    coef_det = r2(true, pred)
+    mape = sMAPE(true, pred)
+    rel_mse = rMSE(true, pred)
+    return np.array([coef_det, mape, rel_mse])
 
 def r2(true, pred):
-    ss_res = jnp.sum(jnp.power(true - pred, 2))
-    ss_tot = jnp.sum(jnp.power(true - jnp.mean(true), 2))
+    ss_res = np.sum(np.power(true - pred, 2))
+    ss_tot = np.sum(np.power(true - np.mean(true), 2))
     return 1 - ss_res / ss_tot
 
 
-def mape(true, pred):
-    return jnp.abs(true - pred).mean() / jnp.abs(true).mean() * 100
+# def mape(true, pred):
+#     return jnp.abs(true - pred).mean() / jnp.abs(true).mean() * 100
+
+
+def rMSE(true, pred):
+    return np.mean(np.power(true - pred, 2) / .5 * (np.power(true, 2) + np.power(pred, 2))) * 100
+
+def sMAPE(true, pred):
+    return np.mean(np.abs(true - pred) / .5 * (np.abs(true) + np.abs(pred))) * 100
+
 
 
 class min_max_scaler:
