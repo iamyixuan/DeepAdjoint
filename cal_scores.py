@@ -38,7 +38,7 @@ def format_vals(scores):
 
 # read predictions
 
-with open('/pscratch/sd/y/yixuans/2023-8-16-UNet-5var-predictions.pkl', 'rb') as f:
+with open('/pscratch/sd/y/yixuans/2023-8-30-5-var-pred-Unet.pkl', 'rb') as f:
     data = pickle.load(f)
 
 with open('./tmp/SOMA_mask.pkl', 'rb') as f:
@@ -63,7 +63,7 @@ for i in range(true.shape[-1]):
     fig_true = plot_field(true[15,10,..., i], pred[15,10,..., i], vmin[i], vmax[i])
     # fig_pred = plot_field(pred[15,10, ..., i], vmin, vmax)
 
-    fig_true.savefig(f'eval_plots/pred-true-UNet/true-pred-UNet-var{var_names[i]}.png', format='png', dpi=200)
+    fig_true.savefig(f'eval_plots/pred-true-UNet/true-pred-UNet-var{var_names[i]}-5input.png', format='png', dpi=200)
     # fig_pred.savefig('eval_plots/pred-ResNet-5-var.png', format='png', dpi=200)
 
 metric_true = np.nan_to_num(true)

@@ -174,7 +174,7 @@ class SOMAdata(Dataset):
             y = d[1]
 
         var_idx = [3, 6, 10, 14, 15] 
-        x_in = np.transpose(x, axes=[3, 0, 1, 2])
+        x_in = np.transpose(x, axes=[3, 0, 1, 2])[var_idx, ...]
         x_out = np.transpose(y, axes=[3, 0, 1, 2])[var_idx, ...]
 
 

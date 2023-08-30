@@ -19,7 +19,7 @@ from ..utils.logger import Logger
 def ddp_setup(rank, world_size):
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12532"
-    init_process_group(backend='nccl', rank=rank, world_size=world_size)
+    init_process_group(backend='nccl', rank=rank, world_size=world_size, init_method='env://')
 
 class Trainer:
     '''
@@ -39,7 +39,8 @@ class Trainer:
         #     self.device = torch.device("cpu")
         self.net = net.to(gpu_id)
 
-        self.net = DDP(net, device_ids=[self.gpu_id], find_unused_parameters=True) 
+        if int(os.environ['TRAIN']) == 1:
+            self.net = DDP(net, device_ids=[self.gpu_id], find_unused_parameters=True) 
         self.dual_train = dual_train
 
         self.now = datetime.now().strftime('%Y-%m-%d')
@@ -80,9 +81,13 @@ class Trainer:
         # self.net.to(self.device)
         self.net.train()
         optimizer = self.optimizer(self.net.parameters(), lr=learning_rate)
-        scheduler = torch.optim.lr_scheduler.StepLR (optimizer , 100 , gamma=0.1, verbose=True)
-        train_loader = DataLoader(train, batch_size=batch_size, sampler=DistributedSampler(train))
-        val_loader = DataLoader(val, batch_size=10, sampler=DistributedSampler(val))
+        # scheduler = torch.optim.lr_scheduler.StepLR (optimizer , 100 , gamma=0.1, verbose=True)
+        if int(os.environ['TRAIN']) == 1:
+            train_loader = DataLoader(train, batch_size=batch_size, sampler=DistributedSampler(train))
+            val_loader = DataLoader(val, batch_size=10, sampler=DistributedSampler(val))
+        else:
+            train_loader = DataLoader(train, batch_size=batch_size)
+            val_loader = DataLoader(val, batch_size=10)
 
         if mask is not None:
             print("Masking the loss...")
@@ -120,7 +125,7 @@ class Trainer:
                 running_loss.append(batch_loss.detach().cpu().numpy())
                 running_metrics.append(batch_metric)
                 optimizer.step()
-            scheduler.step()
+            # scheduler.step()
             with torch.no_grad():
                 val_out = self.net(x_val) 
                 if self.dual_train:
