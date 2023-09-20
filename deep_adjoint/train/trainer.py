@@ -9,9 +9,11 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
+from torch.func import jacrev
 
 
 from ..utils.losses import Losses
+from ..utils import FNO_losses 
 from ..utils.metrics import get_metrics
 from ..utils.logger import Logger
 
@@ -31,8 +33,11 @@ class Trainer:
             self.optimizer = torch.optim.Adam
         
         self.gpu_id = gpu_id
-        self.ls_fn = Losses(loss_name)()
-       
+
+        if os.environ['LOSS'] == 'FNO':
+            self.ls_fn = FNO_losses.LpLoss(d = 4, p = 2)
+        else:
+            self.ls_fn = Losses(loss_name)()
         # if torch.cuda.is_available():
         #     self.device = torch.device("cuda")  # Use CUDA device
         # else:
@@ -119,7 +124,7 @@ class Trainer:
                 if self.dual_train:
                     batch_loss = self.ls_fn(y_train, out, adj_train)
                 else:
-                    batch_loss = self.ls_fn(y_train, out, mask=mask)
+                    batch_loss = self.ls_fn(y_train, out) # enable mask for Unet and ResNet
                     batch_metric = get_metrics(y_train.detach().cpu().numpy(), out.detach().cpu().numpy())
                 batch_loss.backward()
                 running_loss.append(batch_loss.detach().cpu().numpy())
@@ -131,7 +136,7 @@ class Trainer:
                 if self.dual_train:
                     val_loss = self.ls_fn(y_val, val_out, adj_val)
                 else:
-                    val_loss = self.ls_fn(y_val, val_out, mask=mask)
+                    val_loss = self.ls_fn(y_val, val_out)#, mask=mask)
                     val_metrics = get_metrics(y_val.detach().cpu().numpy(), val_out.detach().cpu().numpy())
             
             if self.gpu_id == 0 and ep % save_freq == 0:
@@ -149,7 +154,7 @@ class Trainer:
 
 
 def predict(net, gpu_id, test_data, checkpoint=None):
-    test_loader = DataLoader(test_data, batch_size=29)
+    test_loader = DataLoader(test_data, batch_size=8)
 
     y_true = []
     y_pred = []
@@ -183,25 +188,41 @@ def pred_rollout(net, gpu_id, test_data, checkpoint=None):
     if checkpoint is not None:
         net.load_state_dict(torch.load(checkpoint))
     for x, y in test_loader:
+        # when rollout need to make sure to feed in the true external parameters
+        PARAM_IDX = [-1] # needs to be a list
         x = x.to(gpu_id)
         y = y.to(gpu_id)
         temp_yp = []
         temp_yt = []
-        for t in range(ROLLOUT_STEPS):
+        for t in tqdm(range(ROLLOUT_STEPS)):
             with torch.no_grad():
                 if t == 0:
                     pred = net(x[0:1])
+                    pred = torch.cat([pred, x[1:2,PARAM_IDX, ...]], axis=1)
                     temp_yp.append(pred)
                     temp_yt.append(y[0:1])
                 else:
                     pred = net(temp_yp[-1])
+                    pred = torch.cat([pred, x[t:t+1, PARAM_IDX, ...]], axis=1)
                     temp_yp.append(pred)
                     temp_yt.append(y[t:t+1])
         y_pred.append([y_p.detach().cpu().numpy() for y_p in temp_yp])
         y_true.append([y_t.detach().cpu().numpy() for y_t in temp_yt])
     
     return np.array(y_true), np.array(y_pred)
-    
+
+# Obtain the adjoint of NN wrt model input
+
+def rvs_adjoint(model, inputs, axis):
+    inputs.requires_grad = True
+    model.eval()
+    def f(inpus):
+        out = model(inputs)
+        out = torch.mean(out, dim=axis)
+        return out
+    jacobian = jacrev(f)(inputs)
+    # out_jac = torch.autograd.functional.jacobian(model, inputs)
+    return jacobian
 
 
 

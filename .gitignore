@@ -17,3 +17,6 @@ __pycache__/
 tmp/
 saved/
 *.pkl
+eval_plots/
+neuraloperator/
+notebooks/

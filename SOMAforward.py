@@ -7,6 +7,8 @@ import argparse
 
 from deep_adjoint.model.ForwardSurrogate import OneStepSolve3D, FNN
 from torch.distributed import init_process_group
+from neuralop.models import TFNO3d
+from neuralop.models import FNO3d
 from pytorch3dunet.unet3d.model import UNet3D
 from deep_adjoint.utils.data import SOMAdata, SOMA_PCA_Data
 from deep_adjoint.train.trainer import Trainer, ddp_setup, mp, destroy_process_group, predict, pred_rollout
@@ -37,14 +39,16 @@ def run(args):
         builtins.print = print_pass
 
     if args.net_type == 'ResNet':
-        net = OneStepSolve3D(in_ch=5,
+        net = OneStepSolve3D(in_ch=6,
                             out_ch=5, 
                             hidden=args.hidden, 
                             num_res_block=args.num_res_block)
     elif args.net_type == 'UNet':
-        net = UNet3D(in_channels=5, out_channels=5)
+        net = UNet3D(in_channels=6, out_channels=5)
     elif args.net_type == 'FNN':
         net = FNN(in_dim=50*5, out_dim=50*5, layer_sizes=[500]*20)
+    elif args.net_type == 'FNO':
+        net = TFNO3d(n_modes_height = 4, n_modes_width = 4, n_modes_depth = 4, in_channels = 6, out_channels = 5, hidden_channels = 16, projection_channels = 32, factorization = 'tucker', rank = 0.42)
     else:
         raise TypeError('Specify a network type!')
     
@@ -61,8 +65,8 @@ def run(args):
         test_set = SOMA_PCA_Data(path=data_path, mode='test')
     else:
         data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/varyGM/thedataset3.hdf5'
-        train_set = SOMAdata(path=data_path, mode='train', gpu_id=args.gpu) 
-        val_set = SOMAdata(path=data_path, mode='val', gpu_id=args.gpu) 
+        train_set = SOMAdata(path=data_path, mode='train', gpu_id=args.gpu, train_noise=True) 
+        val_set = SOMAdata(path=data_path, mode='val', gpu_id=args.gpu, train_noise=True) 
         test_set = SOMAdata(path=data_path, mode='test', gpu_id=args.gpu) 
     
     if args.train == "True":
@@ -81,11 +85,14 @@ def run(args):
     elif args.train == "False":
         true, pred, gm = predict(net=net, test_data=test_set, gpu_id=0,
                      checkpoint=args.model_path)
-        with open('/pscratch/sd/y/yixuans/2023-8-30-5-var-pred-Unet.pkl', 'wb') as f:
+        with open('/pscratch/sd/y/yixuans/2023-9-20-var-pred-FNO-trNoise.pkl', 'wb') as f:
             true_pred = {'true': true, 'pred': pred, 'gm': gm}
             pickle.dump(true_pred, f)
     else:
         true, pred = pred_rollout(net=net, test_data=test_set, gpu_id=args.gpu, checkpoint=args.model_path)
+        with open('/pscratch/sd/y/yixuans/FNO-5var-rollout-trNoise.pkl', 'wb') as f:
+            rollout = {'true': true, 'pred': pred}
+            pickle.dump(rollout, f)
         print(true.shape, pred.shape)
 
 
@@ -95,7 +102,7 @@ if __name__ == "__main__":
     parser.add_argument('-hidden', default=2, type=int)
     parser.add_argument('-num_res_block', default=2, type=int)
     parser.add_argument('-epochs', default=1000, type=int)
-    parser.add_argument('-batch_size', default=32, type=int)
+    parser.add_argument('-batch_size', default=8, type=int)
     parser.add_argument('-lr', default=0.001, type=float)
     parser.add_argument('-train', default='True', type=str)
     parser.add_argument('-mask', default=None, type=str)

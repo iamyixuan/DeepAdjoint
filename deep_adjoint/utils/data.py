@@ -104,11 +104,13 @@ class GlacierData(Dataset):
 
 
 class SOMAdata(Dataset):
-    def __init__(self, path, mode, gpu_id, time_steps_per_forward=30, transform=True):
+    def __init__(self, path, mode, gpu_id, time_steps_per_forward=30, transform=True, train_noise=False):
         '''path: the hd5f file path, can be relative path
         mode: ['trian', 'val', 'test']
         '''
         super(SOMAdata, self).__init__()
+        self.mode = mode
+        self.train_noise = train_noise
 
         DIR = os.path.dirname(os.path.abspath(__file__))
         data_path = os.path.join(DIR, path)
@@ -147,6 +149,7 @@ class SOMAdata(Dataset):
             self.keys = keys[TRAIN_SIZE: TRAIN_SIZE + TEST_SIZE]
         elif mode == 'test':
             self.keys = keys[-TEST_SIZE:]
+            print("Test set keys", self.keys)
         else:
             raise Exception(f'Invalid mode: {mode}, please select from "train", "val", and "test".')
 
@@ -174,8 +177,13 @@ class SOMAdata(Dataset):
             y = d[1]
 
         var_idx = [3, 6, 10, 14, 15] 
-        x_in = np.transpose(x, axes=[3, 0, 1, 2])[var_idx, ...]
+        var_idx_in = var_idx + [-1]
+        x_in = np.transpose(x, axes=[3, 0, 1, 2])[var_idx_in, ...]
         x_out = np.transpose(y, axes=[3, 0, 1, 2])[var_idx, ...]
+
+        if self.train_noise and self.mode != 'test':
+            noise = np.random.normal(loc=0.0, scale=3e-4, size=x_in.shape)  #http://proceedings.mlr.press/v119/sanchez-gonzalez20a/sanchez-gonzalez20a.pdf
+            x_in = x_in + noise
 
 
         # x_in = x[:-1]
