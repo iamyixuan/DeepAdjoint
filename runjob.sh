@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --output=./_job_history/%j-%J.out
+#SBATCH --output=./_job_history/%j.out
 #SBATCH --error=./_job_history/%j.err
 #SBATCH -A m4259
 #SBATCH --qos=regular
@@ -13,7 +13,7 @@
 
 # conda activate deeplearning
 export WORLD_SIZE=40
-export MASTER_PORT=12340
+export MASTER_PORT=38173
 export TRAIN=1  
 export LOSS=FNO
 
@@ -21,11 +21,14 @@ export LOSS=FNO
 ### e.g. master(gnodee[2-5],gnoded1) == gnodee2
 echo "NODELIST="${SLURM_NODELIST}
 master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
+
+
 export MASTER_ADDR=$master_addr
 export LOSS=FNO
 srun python SOMAforward.py -batch_size 8\
-                      -epochs 3000\
+                      -epochs 2000\
                       -lr 0.0001\
-                      -model_name GM-FNO-5state\
-                      -mask True\
+                      -model_name FNO-\
+                      -mask False\
                       -net_type FNO\
+                      -data CVMIX\

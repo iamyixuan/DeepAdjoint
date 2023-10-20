@@ -118,7 +118,10 @@ class LpLoss(object):
             
         return diff
 
-    def rel(self, x, y):
+    def rel(self, x, y, mask=None):
+        if mask is not None:
+            x = x*mask
+            y = y*mask
 
         diff = torch.norm(torch.flatten(x, start_dim=-self.d) - torch.flatten(y, start_dim=-self.d), \
                           p=self.p, dim=-1, keepdim=False)
@@ -131,7 +134,7 @@ class LpLoss(object):
             
         return diff
 
-    def __call__(self, x, y):
+    def __call__(self, x, y, mask=None):
         return self.rel(x, y)
 
 

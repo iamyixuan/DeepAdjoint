@@ -35,6 +35,7 @@ class Trainer:
         self.gpu_id = gpu_id
 
         if os.environ['LOSS'] == 'FNO':
+            print('Using Lp loss...')
             self.ls_fn = FNO_losses.LpLoss(d = 4, p = 2)
         else:
             self.ls_fn = Losses(loss_name)()
@@ -110,6 +111,7 @@ class Trainer:
             break
 
         print("Starts training...")
+        best_val = np.inf
         for ep in range(epochs):
             running_loss = []
             running_metrics = []
@@ -124,7 +126,7 @@ class Trainer:
                 if self.dual_train:
                     batch_loss = self.ls_fn(y_train, out, adj_train)
                 else:
-                    batch_loss = self.ls_fn(y_train, out) # enable mask for Unet and ResNet
+                    batch_loss = self.ls_fn(y_train, out, mask=mask) # enable mask for Unet and ResNet
                     batch_metric = get_metrics(y_train.detach().cpu().numpy(), out.detach().cpu().numpy())
                 batch_loss.backward()
                 running_loss.append(batch_loss.detach().cpu().numpy())
@@ -136,8 +138,13 @@ class Trainer:
                 if self.dual_train:
                     val_loss = self.ls_fn(y_val, val_out, adj_val)
                 else:
-                    val_loss = self.ls_fn(y_val, val_out)#, mask=mask)
+                    val_loss = self.ls_fn(y_val, val_out, mask=mask)
                     val_metrics = get_metrics(y_val.detach().cpu().numpy(), val_out.detach().cpu().numpy())
+            
+            if self.gpu_id==0 and val_loss.item() < best_val:
+                best_val = val_loss.item()
+                torch.save(self.net.module.state_dict(), f'./checkpoints/{self.now}_{model_name}/best_model')
+
             
             if self.gpu_id == 0 and ep % save_freq == 0:
                 torch.save(self.net.module.state_dict(), f'./checkpoints/{self.now}_{model_name}/model_saved_ep_{ep}')

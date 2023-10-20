@@ -16,6 +16,7 @@ from deep_adjoint.train.trainer import Trainer, ddp_setup, mp, destroy_process_g
 def run(args):
     if "WORLD_SIZE" in os.environ:
         args.world_size = int(os.environ["WORLD_SIZE"])
+    print('WORLD_SIZE:', args.world_size)
     args.distributed = args.world_size > 1
     ngpus_per_node = torch.cuda.device_count()
 
@@ -27,8 +28,10 @@ def run(args):
             args.rank = int(os.environ['SLURM_PROCID'])
             args.gpu = args.rank % torch.cuda.device_count()
         torch.cuda.set_device(args.gpu)
+        print("Initializing process group...")
         init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size, rank=args.rank)
+        print("Done.")
     else:
         args.gpu = 0 
         
@@ -64,9 +67,16 @@ def run(args):
         val_set = SOMA_PCA_Data(path=data_path, mode='val')
         test_set = SOMA_PCA_Data(path=data_path, mode='test')
     else:
-        data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/varyGM/thedataset3.hdf5'
-        train_set = SOMAdata(path=data_path, mode='train', gpu_id=args.gpu, train_noise=True) 
-        val_set = SOMAdata(path=data_path, mode='val', gpu_id=args.gpu, train_noise=True) 
+        if args.data == "GM":
+            data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/thedataset3.hdf5'
+        elif args.data == "REDI":
+            data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-redi-2.hdf5'
+        elif args.data == "CVMIX":
+            data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-cvmix-2.hdf5'
+        else:
+            raise TypeError('Dataset not recognized!')
+        train_set = SOMAdata(path=data_path, mode='train', gpu_id=args.gpu, train_noise=False) 
+        val_set = SOMAdata(path=data_path, mode='val', gpu_id=args.gpu, train_noise=False) 
         test_set = SOMAdata(path=data_path, mode='test', gpu_id=args.gpu) 
     
     if args.train == "True":
@@ -75,8 +85,8 @@ def run(args):
                   epochs=args.epochs,
                   batch_size=args.batch_size,
                   learning_rate=args.lr,
-                  model_name=args.model_name,
-                  mask=args.mask,
+                  model_name=args.model_name + args.data,
+                  mask=None,
                   save_freq=args.save_freq,
                   load_model=args.load_model,
                   model_path=args.model_path)
@@ -85,7 +95,7 @@ def run(args):
     elif args.train == "False":
         true, pred, gm = predict(net=net, test_data=test_set, gpu_id=0,
                      checkpoint=args.model_path)
-        with open('/pscratch/sd/y/yixuans/2023-9-20-var-pred-FNO-trNoise.pkl', 'wb') as f:
+        with open('/pscratch/sd/y/yixuans/2023-10-2-FNO-redi-predictions.pkl', 'wb') as f:
             true_pred = {'true': true, 'pred': pred, 'gm': gm}
             pickle.dump(true_pred, f)
     else:
@@ -105,12 +115,13 @@ if __name__ == "__main__":
     parser.add_argument('-batch_size', default=8, type=int)
     parser.add_argument('-lr', default=0.001, type=float)
     parser.add_argument('-train', default='True', type=str)
-    parser.add_argument('-mask', default=None, type=str)
+    parser.add_argument('-mask', default='True', type=str)
     parser.add_argument('-model_name', type=str, default='test')
     parser.add_argument('-net_type', type=str, default='UNet')
     parser.add_argument('-load_model', action='store_true')
     parser.add_argument('-model_path', type=str)
-    parser.add_argument('-save_freq', type=int, default=10)
+    parser.add_argument('-save_freq', type=int, default=100)
+    parser.add_argument('-data', type=str, default='GM')
 
     parser.add_argument('--world-size', default=-1, type=int, 
                         help='number of nodes for distributed training')

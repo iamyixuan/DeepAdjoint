@@ -20,3 +20,4 @@ saved/
 eval_plots/
 neuraloperator/
 notebooks/
+*.npy
