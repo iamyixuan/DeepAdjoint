@@ -13,7 +13,7 @@
 
 # conda activate deeplearning
 export WORLD_SIZE=40
-export MASTER_PORT=38173
+export MASTER_PORT=38172
 export TRAIN=1  
 export LOSS=FNO
 
@@ -25,10 +25,10 @@ master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 
 export MASTER_ADDR=$master_addr
 export LOSS=FNO
-srun python SOMAforward.py -batch_size 8\
-                      -epochs 2000\
+srun python SOMAforward.py -batch_size 10\
+                      -epochs 5000\
                       -lr 0.0001\
                       -model_name FNO-\
                       -mask False\
                       -net_type FNO\
-                      -data CVMIX\
+                      -data GM_D_AVG\

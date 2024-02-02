@@ -7,7 +7,7 @@ import torch
 import h5py
 from torch.utils.data import Dataset
 from .utils import split_idx
-from .scaler import ChannelMinMaxScaler
+from .scaler import DataScaler
 from sklearn.preprocessing import MinMaxScaler
 
 
@@ -101,10 +101,8 @@ class GlacierData(Dataset):
             raise Exception(f"Portion type {self.portion} not recognized!")
         return x, (y, adj)
     
-
-
 class SOMAdata(Dataset):
-    def __init__(self, path, mode, gpu_id, time_steps_per_forward=30, transform=True, train_noise=False):
+    def __init__(self, path, mode, gpu_id, time_steps_per_forward=30, transform=True, train_noise=False, loss_mask=False):
         '''path: the hd5f file path, can be relative path
         mode: ['trian', 'val', 'test']
         '''
@@ -123,25 +121,31 @@ class SOMAdata(Dataset):
 
         self.gpu_id = gpu_id
         self.time_steps_per_forward = time_steps_per_forward
+        
+        # specify the range of state variables in order
+        '''
+        Layer thickness: [4.539446, 13.05347]
+        Salinity: [34.01481, 34.24358].
+        Temperature: [5.144762, 18.84177]
+        Meridional Velocity: [3.82e-8, 0.906503]
+        Zonal Velocity: [6.95e-9, 1.640676]
+        '''
+        data_min = np.array([34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9]) 
+        data_max = np.array([34.24358, 18.84177, 13.05347, 0.906503, 1.640676])
 
-        sample_data = self.data['forward_0'][...]
-
-        self.mask1 = sample_data < -1e16
-        self.mask2 = sample_data > 1e16
-
-        sample_data[self.mask1] = np.nan
-        sample_data[self.mask2] = np.nan
-
-        self.scaler = ChannelMinMaxScaler(sample_data, (0, 1, 2, 3))
+        self.scaler = DataScaler(data_min=data_min, data_max=data_max)
         self.transform = transform
 
         # create a mask for loss calculation
-        self.loss_mask = np.logical_or(self.mask1, self.mask2)[0,0,:,:,0] # mask only in x,y plane thus size of [100, 100] this will broadcast in element wise product
-        self.loss_mask = np.array(~self.loss_mask, dtype=int) # True - 0; False - 1
-        # self.loss_mask = np.transpose(self.loss_mask, axes=[3, 0, 1, 2])[:-1, ...]
-        # self.loss_mask = np.expand_dims(self.loss_mask, axis=0) # expand batch dimension for broadcasting
-        self.loss_mask = torch.from_numpy(self.loss_mask).float()
-        
+        if loss_mask:
+            with open('/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl', 'rb') as f:
+                mask = pickle.load(f)
+            
+            self.mask1 = mask['mask1']
+            self.mask2 = mask['mask2']
+            self.loss_mask = np.logical_or(self.mask1, self.mask2)[0,0,:,:,0] # mask only in x,y plane thus size of [100, 100] this will broadcast in element wise product
+            self.loss_mask = np.array(~self.loss_mask, dtype=int) # True - 0; False - 1
+            self.loss_mask = torch.from_numpy(self.loss_mask).float()
 
         if mode == 'train':
             self.keys = keys[:TRAIN_SIZE]
@@ -155,9 +159,9 @@ class SOMAdata(Dataset):
 
     def preprocess(self, x, y):
         '''Prepare data as the input-output pair for a single forward run
-        x has the shape of (60, 100, 100, 17)
-        the goal is to first move the ch axis to the second -> (17, 60, 100, 100)
-        then create input output pair where the input shape is (17, 60, 100, 100) and the output shape is (16, 60, 100, 100)
+        x has the shape of (60, 100, 100, 5)
+        the goal is to first move the ch axis to the second -> (5, 60, 100, 100)
+        then create input output pair where the input shape is (5, 60, 100, 100) and the output shape is (16, 60, 100, 100)
         idx 14 is the varying parameter for the input.
 
         '''
@@ -168,15 +172,13 @@ class SOMAdata(Dataset):
         y[self.mask1[0]] = 0
         y[self.mask2[0]] = 0
 
-
-
         if self.transform:
             d = np.stack((x, y), axis=0)
             d = self.scaler.transform(d)
             x = d[0]
             y = d[1]
 
-        var_idx = [3, 6, 10, 14, 15] 
+        var_idx = [7, 8, 11, 14, 15] #[3, 6, 10, 14, 15] # needs adjusting for the daily averaged datasets [7, 8, 11, 14, 15] 
         var_idx_in = var_idx + [-1]
         x_in = np.transpose(x, axes=[3, 0, 1, 2])[var_idx_in, ...]
         x_out = np.transpose(y, axes=[3, 0, 1, 2])[var_idx, ...]
@@ -184,10 +186,6 @@ class SOMAdata(Dataset):
         if self.train_noise and self.mode != 'test':
             noise = np.random.normal(loc=0.0, scale=3e-4, size=x_in.shape)  #http://proceedings.mlr.press/v119/sanchez-gonzalez20a/sanchez-gonzalez20a.pdf
             x_in = x_in + noise
-
-
-        # x_in = x[:-1]
-        # x_out = x[1:, :-1, ...]  # excluding the varying parameter (b/c it is part of the input)
         return (x_in, x_out)
 
     def __len__(self):

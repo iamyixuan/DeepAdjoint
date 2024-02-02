@@ -73,6 +73,10 @@ def run(args):
             data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-redi-2.hdf5'
         elif args.data == "CVMIX":
             data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-cvmix-2.hdf5'
+        elif args.data == "BTTMDRAG":
+            data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-impliciBottomDrag.hdf5'
+        elif args.data =="GM_D_AVG":
+            data_path = '/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM-dayAvg-2.hdf5'
         else:
             raise TypeError('Dataset not recognized!')
         train_set = SOMAdata(path=data_path, mode='train', gpu_id=args.gpu, train_noise=False) 
@@ -93,14 +97,14 @@ def run(args):
                 
         destroy_process_group()
     elif args.train == "False":
-        true, pred, gm = predict(net=net, test_data=test_set, gpu_id=0,
+        true, pred, param = predict(net=net, test_data=test_set, gpu_id=0,
                      checkpoint=args.model_path)
-        with open('/pscratch/sd/y/yixuans/2023-10-2-FNO-redi-predictions.pkl', 'wb') as f:
-            true_pred = {'true': true, 'pred': pred, 'gm': gm}
+        with open(f'/pscratch/sd/y/yixuans/{args.net_type}-{args.data}-predictions.pkl', 'wb') as f:
+            true_pred = {'true': true, 'pred': pred, 'param': param}
             pickle.dump(true_pred, f)
     else:
         true, pred = pred_rollout(net=net, test_data=test_set, gpu_id=args.gpu, checkpoint=args.model_path)
-        with open('/pscratch/sd/y/yixuans/FNO-5var-rollout-trNoise.pkl', 'wb') as f:
+        with open(f'/pscratch/sd/y/yixuans/{args.net_type}-{args.data}-rollout.pkl', 'wb') as f:
             rollout = {'true': true, 'pred': pred}
             pickle.dump(rollout, f)
         print(true.shape, pred.shape)

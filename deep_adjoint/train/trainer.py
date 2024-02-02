@@ -161,7 +161,7 @@ class Trainer:
 
 
 def predict(net, gpu_id, test_data, checkpoint=None):
-    test_loader = DataLoader(test_data, batch_size=8)
+    test_loader = DataLoader(test_data, batch_size=12)
 
     y_true = []
     y_pred = []
