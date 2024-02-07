@@ -115,9 +115,11 @@ class Trainer:
         for ep in range(epochs):
             running_loss = []
             running_metrics = []
-            for x_train, y_train in tqdm(train_loader):
+            for x_train, y_train in train_loader:
+        
                 x_train = x_train.to(self.gpu_id)
                 y_train = y_train.to(self.gpu_id)
+        
                 if self.dual_train:
                     y_train, adj_train = y_train
                 optimizer.zero_grad()

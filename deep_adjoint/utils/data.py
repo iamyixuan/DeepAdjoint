@@ -130,19 +130,23 @@ class SOMAdata(Dataset):
         Meridional Velocity: [3.82e-8, 0.906503]
         Zonal Velocity: [6.95e-9, 1.640676]
         '''
-        data_min = np.array([34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9]) 
-        data_max = np.array([34.24358, 18.84177, 13.05347, 0.906503, 1.640676])
+        data_min = np.array([34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9, 200]) 
+        data_max = np.array([34.24358, 18.84177, 13.05347, 0.906503, 1.640676, 2000])
 
         self.scaler = DataScaler(data_min=data_min, data_max=data_max)
         self.transform = transform
 
-        # create a mask for loss calculation
-        if loss_mask:
-            with open('/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl', 'rb') as f:
+
+        with open('/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl', 'rb') as f:
                 mask = pickle.load(f)
             
-            self.mask1 = mask['mask1']
-            self.mask2 = mask['mask2']
+        self.mask1 = mask['mask1']
+        self.mask2 = mask['mask2']
+        self.mask = np.logical_or(self.mask1, self.mask2)[0,0,:,:,0]
+
+        # create a mask for loss calculation
+        if loss_mask:
+
             self.loss_mask = np.logical_or(self.mask1, self.mask2)[0,0,:,:,0] # mask only in x,y plane thus size of [100, 100] this will broadcast in element wise product
             self.loss_mask = np.array(~self.loss_mask, dtype=int) # True - 0; False - 1
             self.loss_mask = torch.from_numpy(self.loss_mask).float()
@@ -166,22 +170,23 @@ class SOMAdata(Dataset):
 
         '''
         assert len(x.shape) == 4, "Incorrect data shape!"
+        var_idx = [7, 8, 11, 14, 15, -1] #[3, 6, 10, 14, 15] # needs adjusting for the daily averaged datasets [7, 8, 11, 14, 15] 
 
-        x[self.mask1[0]] = 0 # every field has the same mask so use the first one and keep the dimension.
-        x[self.mask2[0]] = 0 
-        y[self.mask1[0]] = 0
-        y[self.mask2[0]] = 0
+        x = x[..., var_idx]
+        y = y[..., var_idx]
 
         if self.transform:
-            d = np.stack((x, y), axis=0)
-            d = self.scaler.transform(d)
-            x = d[0]
-            y = d[1]
+            x = self.scaler.transform(x)
+            y = self.scaler.transform(y)
 
-        var_idx = [7, 8, 11, 14, 15] #[3, 6, 10, 14, 15] # needs adjusting for the daily averaged datasets [7, 8, 11, 14, 15] 
-        var_idx_in = var_idx + [-1]
-        x_in = np.transpose(x, axes=[3, 0, 1, 2])[var_idx_in, ...]
-        x_out = np.transpose(y, axes=[3, 0, 1, 2])[var_idx, ...]
+        bc_mask = np.broadcast_to(self.mask[np.newaxis, ..., np.newaxis], x.shape)
+        x[bc_mask] = 0
+        y[bc_mask] = 0
+
+
+        x_in = np.transpose(x, axes=[3, 0, 1, 2])
+        x_out = np.transpose(y, axes=[3, 0, 1, 2])[:-1, ...] # remove the parameter dim
+
 
         if self.train_noise and self.mode != 'test':
             noise = np.random.normal(loc=0.0, scale=3e-4, size=x_in.shape)  #http://proceedings.mlr.press/v119/sanchez-gonzalez20a/sanchez-gonzalez20a.pdf
