@@ -13,7 +13,7 @@ from torch.func import jacrev
 
 
 from ..utils.losses import Losses
-from ..utils import FNO_losses 
+from ..utils import FNO_losses
 from ..utils.metrics import get_metrics
 from ..utils.logger import Logger
 
@@ -36,7 +36,8 @@ class Trainer:
 
         if os.environ['LOSS'] == 'FNO':
             print('Using Lp loss...')
-            self.ls_fn = FNO_losses.LpLoss(d = 4, p = 2)
+            #self.ls_fn = FNO_losses.LpLoss(d = 4, p = 2)
+            self.ls_fn = FNO_losses.MSE_ACCLoss()
         else:
             self.ls_fn = Losses(loss_name)()
         # if torch.cuda.is_available():
@@ -120,19 +121,13 @@ class Trainer:
                 x_train = x_train.to(self.gpu_id)
                 y_train = y_train.to(self.gpu_id)
         
-                if self.dual_train:
-                    y_train, adj_train = y_train
                 optimizer.zero_grad()
                 out = self.net(x_train)
 
-                if self.dual_train:
-                    batch_loss = self.ls_fn(y_train, out, adj_train)
-                else:
-                    batch_loss = self.ls_fn(y_train, out, mask=mask) # enable mask for Unet and ResNet
-                    batch_metric = get_metrics(y_train.detach().cpu().numpy(), out.detach().cpu().numpy())
+                batch_loss = self.ls_fn(y_train, out, mask=mask) # enable mask for Unet and ResNet
                 batch_loss.backward()
                 running_loss.append(batch_loss.detach().cpu().numpy())
-                running_metrics.append(batch_metric)
+                #running_metrics.append(batch_metric)
                 optimizer.step()
             # scheduler.step()
             with torch.no_grad():
@@ -141,7 +136,7 @@ class Trainer:
                     val_loss = self.ls_fn(y_val, val_out, adj_val)
                 else:
                     val_loss = self.ls_fn(y_val, val_out, mask=mask)
-                    val_metrics = get_metrics(y_val.detach().cpu().numpy(), val_out.detach().cpu().numpy())
+                    # val_metrics = get_metrics(y_val.detach().cpu().numpy(), val_out.detach().cpu().numpy())
             
             if self.gpu_id==0 and val_loss.item() < best_val:
                 best_val = val_loss.item()
@@ -154,8 +149,8 @@ class Trainer:
             self.logger.record('epoch', ep+1)
             self.logger.record('train_loss', np.mean(running_loss))
             self.logger.record('val_loss', val_loss.item())
-            self.logger.record('train_metrics', np.mean(np.array(running_metrics), axis=0))
-            self.logger.record('val_metrics', val_metrics)
+            # self.logger.record('train_metrics', np.mean(np.array(running_metrics), axis=0))
+            # self.logger.record('val_metrics', val_metrics)
             self.logger.print()
             self.logger.save()
             

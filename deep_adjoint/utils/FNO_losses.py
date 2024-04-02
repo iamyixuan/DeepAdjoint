@@ -278,3 +278,25 @@ class H1Loss(object):
 
     def __call__(self, x, y, h=None):
         return self.rel(x, y, h=h)
+
+
+class MSE_ACCLoss(torch.nn.Module):
+    def __init__(self, alpha=.5):
+        super(MSE_ACCLoss, self).__init__()
+        self.alpha = alpha
+    def forward(self, true, pred, mask=None):
+        '''
+        true and pred have shape (B, 5, 60, 100, 100)
+        we should calculate the channel wise scores
+        '''
+        TrueMean = torch.mean(true, dim=(0, 2, 3, 4), keepdims=True)
+        TrueAnomaly = true - TrueMean
+        PredAnomaly = pred - TrueMean
+
+        cov = torch.mean(PredAnomaly * TrueAnomaly, dim=(0, 2, 3, 4))
+        std = torch.sqrt(torch.mean(PredAnomaly ** 2, dim=(0, 2, 3, 4)) * torch.mean(TrueAnomaly ** 2, dim=(0, 2, 3, 4)))
+
+        acc_term = -torch.mean(cov / std)
+        mse_term = torch.mean((true - pred) ** 2)
+
+        return self.alpha * mse_term  + (1 - self.alpha) * acc_term

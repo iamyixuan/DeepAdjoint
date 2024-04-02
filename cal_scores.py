@@ -6,14 +6,17 @@ import os
 import h5py
 # import metrics
 from deep_adjoint.utils.metrics import r2, NRMSE, anomalyCorrelationCoef
+from deep_adjoint.utils.scaler import DataScaler
 
 # plot utilies
 def rescale(t, p, idx):
-    data = h5py.File('/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM-dayAvg-2.hdf5', 'r')['forward_0'][..., [7, 8, 11, 14, 15]]
+    data = h5py.File('/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM.hdf5', 'r')['forward_0'][..., [3, 6, 10, 14, 15]]
     mask = np.logical_or(data>1e16, data<-1e16)
     data[mask] = np.nan
+
     t[mask[0,0, :, :,0]] = np.nan
     p[mask[0,0, :, :,0]] = np.nan
+
     MIN = np.nanmin(data, axis=(0, 1, 2, 3))[idx]
     MAX = np.nanmax(data, axis=(0, 1, 2, 3))[idx]
     print(f"Minimum value {MIN}, Maximum value {MAX}")
@@ -22,10 +25,18 @@ def rescale(t, p, idx):
     p_rescale = p * (MAX - MIN) + MIN 
     return t_rescale, p_rescale
 
+def rescale_avg(x):
+    data_min = np.array([34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9]) 
+    data_max = np.array([34.24358, 18.84177, 13.05347, 0.906503, 1.640676])
+
+    scaler = DataScaler(data_min=data_min, data_max=data_max)
+    return scaler.inverse_transform(x)
 
 
 
-def plot_field(true, pred, cbarlabel):
+
+
+def plot_field(true, pred, cbarlabel, idx):
     '''field: shape [x, y]'''
     plt.rcParams['mathtext.fontset'] = 'stix'
     plt.rcParams['font.family'] = 'STIXGeneral'
@@ -33,9 +44,22 @@ def plot_field(true, pred, cbarlabel):
     plt.rcParams['axes.linewidth'] = 1.5
     plt.rcParams['lines.linewidth'] = 2
 
-    vmin = np.min([np.nanmin(true), 0])
-    vmax =  np.nanmax(true)
+    # vmin = np.min([np.nanmin(true), 0])
+
+    # with original order
+    # data_min = np.array([4.539446, 34.01481, 5.144762,  3.82e-8, 6.95e-9]) 
+    # data_max = np.array([13.05347, 34.24358, 18.84177,  0.906503, 1.640676])
+
+    # daily avg order
+    data_min = np.array([34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9]) 
+    data_max = np.array([34.24358, 18.84177, 13.05347, 0.906503, 1.640676])
+
+    # vmin = np.nanmin(true)
+    # vmax =  np.nanmax(true)
     # print(vmin, vmax)
+
+    vmin = data_min[idx]
+    vmax = data_max[idx]
     data = [true, pred, true - pred]
 
     fig, axs = plt.subplots(3, 1, figsize=(4, 12))
@@ -44,9 +68,9 @@ def plot_field(true, pred, cbarlabel):
             im2 = ax.imshow(data[i].T, 
                     cmap='turbo',
                     origin='lower',
-                    aspect='auto',
-                    vmin=-2,
-                    vmax=2)
+                    aspect='auto',)
+                    # vmin=-2,
+                    # vmax=2)
         else:
             im = ax.imshow(data[i].T, 
                         cmap='turbo',
@@ -114,36 +138,62 @@ def plot_trend(mean, se, ylabel, min, max, var_idx, m_names):
 # read predictions
 if __name__ == "__main__":
     ROLLOUT = 0
-    PLOT = 1
-    CAL_SCORE = 0
+    PLOT = 0
+    CAL_SCORE = 1
     PLOT_SINGLE = 0
-    DATA = 'GM_D_AVG'
+    DATA = 'GM_D_AVG_MSE_ACC'
     NET = 'FNO'
 
+    from datetime import datetime
+
+    cur_time = datetime.now().strftime("%Y%m%d-%H")
+    print(cur_time)
+
+    with open('./tmp/SOMA_mask.pkl', 'rb') as f:
+        mask = pickle.load(f)
+    mask = np.logical_or(mask['mask1'], mask['mask2'])[0,0,:,:,0]
+
     var_names = [ 'Salinity', 'Temperature', 'Layer Thickness', 'Meridional Velocity', 'Zonal Velocity']
-    with open(f'/pscratch/sd/y/yixuans/FNO-{DATA}-predictions.pkl', 'rb') as f:
+    # var_names = [ 'Layer Thickness', 'Salinity', 'Temperature',  'Meridional Velocity', 'Zonal Velocity']
+    with open(f'/pscratch/sd/y/yixuans/2024-02-28-12_FNO-GM_D_AVG-predictions.pkl', 'rb') as f:
         data = pickle.load(f)
+
     true = data['true'][1]
     pred = data['pred'][1]
 
+    print(true.shape, pred.shape)
+
+    varID = 1
+
     true = np.transpose(true, axes=(0, 2, 3, 4, 1))
     pred = np.transpose(pred, axes=(0, 2, 3, 4, 1))
-    varID = 4
+
+    # true = true[15]
+    # pred = pred[15]
+    # mask = np.broadcast_to(mask[np.newaxis,..., np.newaxis], true.shape)
+    # print(mask.shape, true.shape)
+    # true[mask] = np.nan
+    # pred[mask] = np.nan
+
+    true = rescale_avg(true)
+    pred = rescale_avg(pred)
+
     t = true[2, 10,..., varID]
     p = pred[2, 10, ..., varID]
 
-    t, p = rescale(t, p, varID)
+    t[mask] = np.nan
+    p[mask] = np.nan
+    print(t.shape, p.shape)
     
-    fig = plot_field(t, p, var_names[varID])
-    fig.savefig(f'./eval_plots/{DATA}-truePred{var_names[varID]}.pdf', format='pdf', bbox_inches='tight')
+    # fig = plot_field(t, p, var_names[varID], varID)
+    # fig.savefig(f'./eval_plots/{cur_time}-{DATA}-truePred{var_names[varID]}.pdf', format='pdf', bbox_inches='tight')
     
-
         
     if ROLLOUT == 1:
         # with open(f'/pscratch/sd/y/yixuans/FNO-{DATA}-rollout.pkl', 'rb') as f:
         #     data = pickle.load(f)
 
-        with open(f'/pscratch/sd/y/yixuans/{NET}-{DATA}-rollout.pkl', 'rb') as f:
+        with open(f'/pscratch/sd/y/yixuans/2024-02-28-12_FNO-GM_D_AVG-rollout.pkl', 'rb') as f:
             data = pickle.load(f)
     
         with open('./tmp/SOMA_mask.pkl', 'rb') as f:
@@ -158,8 +208,13 @@ if __name__ == "__main__":
             true = data['true'][k].squeeze()
             pred = data['pred'][k].squeeze()
 
+
             true = np.transpose(true, axes=(0, 2, 3, 4, 1))
             pred = np.transpose(pred, axes=(0, 2, 3, 4, 1))[...,:-1] # enable this while rollout
+
+            true = rescale_avg(true)
+            pred = rescale_avg(pred)
+
             mask_b = mask[0:1,0:1,:,:,0:1]
             mask_b = np.broadcast_to(mask_b, true.shape)
            
@@ -173,7 +228,7 @@ if __name__ == "__main__":
             
             if PLOT_SINGLE == 1:
                 for v in range(len(var_names)):
-                    fig = plot_field(true[7, 10, ..., v], pred[7, 10, ..., v], vmin[v], vmax[v])
+                    fig = plot_field(true[7, 10, ..., v], pred[7, 10, ..., v], var_names[v], v)
                     fig.savefig(f'./eval_plots/{DIR_NAME}/var{var_names[v]}-onestep.png', format='png', bbox_inches='tight', dpi=300, transparent=True)
                 break
 
@@ -192,7 +247,7 @@ if __name__ == "__main__":
                     NRMSE_timestep.append(NRMSE(cur_true, cur_pred))
 
     
-                    fig_true = plot_field(true[t,10,..., i], pred[t,10,..., i], var_names[i])
+                    fig_true = plot_field(true[t,10,..., i], pred[t,10,..., i], var_names[i], i)
                     # print(NCC_timestep[-1])
 
             
@@ -234,6 +289,8 @@ if __name__ == "__main__":
         pred = np.concatenate(data['pred'])
         true = np.transpose(true, axes=(0, 2, 3, 4, 1))
         pred = np.transpose(pred, axes=(0, 2, 3, 4, 1))
+        true = rescale_avg(true)
+        pred = rescale_avg(pred)
         print(true.shape, pred.shape)
         mask_b = mask[0:1,0:1,:,:,0:1]
         mask_b = np.broadcast_to(mask_b, true.shape)
@@ -255,13 +312,13 @@ if __name__ == "__main__":
     if PLOT == 1:
         # data_Res = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/ResNet-5var/overall_scores-5var-rollout.npy')
         # data_Unet = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/Unet-5var/overall_scores-5var-rollout.npy')
-        data_FNO = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-GM_D_AVG/overall_scores-GM_D_AVG-rollout.npy')
+        data_FNO = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-GM_D_AVG_MSE_ACC/overall_scores-GM_D_AVG_MSE_ACC-rollout.npy')
         # data = np.array([data_Res, data_Unet, data_FNO])
 
-        data_REDI = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-REDI/overall_scores-REDI-rollout.npy')
-        data_CVMIX = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-CVMIX/overall_scores-CVMIX-rollout.npy')
-        data_bottomDrag = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-BTTMDRAG/overall_scores-BTTMDRAG-rollout.npy')
-        print(data_REDI.shape, data_CVMIX.shape, data_bottomDrag.shape)
+        # data_REDI = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-REDI/overall_scores-REDI-rollout.npy')
+        # data_CVMIX = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-CVMIX/overall_scores-CVMIX-rollout.npy')
+        # data_bottomDrag = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-BTTMDRAG/overall_scores-BTTMDRAG-rollout.npy')
+        # print(data_REDI.shape, data_CVMIX.shape, data_bottomDrag.shape)
         #data = [data_FNO, data_REDI, data_CVMIX, data_bottomDrag]
         data = [data_FNO]
         # print(data[2][1, 1,...])

@@ -44,8 +44,8 @@ class DataScaler:
     '''
     def __init__(self, data_min, data_max, min_=0, max_=1) -> None:
         #super().__init__( min_, max_)
-        self.data_min = data_min.reshape(1, 1, 1, 6)
-        self.data_max = data_max.reshape(1, 1, 1, 6)
+        self.data_min = data_min.reshape(1, 1, 1, data_min.shape[0])
+        self.data_max = data_max.reshape(1, 1, 1, data_max.shape[0])
         self.min_ = min_
         self.max_ = max_
 

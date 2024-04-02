@@ -9,6 +9,7 @@ from deep_adjoint.model.ForwardSurrogate import OneStepSolve3D, FNN
 from torch.distributed import init_process_group
 from neuralop.models import TFNO3d
 from neuralop.models import FNO3d
+from datetime import datetime
 from pytorch3dunet.unet3d.model import UNet3D
 from deep_adjoint.utils.data import SOMAdata, SOMA_PCA_Data
 from deep_adjoint.train.trainer import Trainer, ddp_setup, mp, destroy_process_group, predict, pred_rollout
@@ -36,10 +37,10 @@ def run(args):
         args.gpu = 0 
         
 
-    if args.rank!=0:
-        def print_pass(*args):
-            pass
-        builtins.print = print_pass
+    # if args.rank!=0:
+    #     def print_pass(*args):
+    #         pass
+    #     builtins.print = print_pass
 
     if args.net_type == 'ResNet':
         net = OneStepSolve3D(in_ch=6,
@@ -51,7 +52,7 @@ def run(args):
     elif args.net_type == 'FNN':
         net = FNN(in_dim=50*5, out_dim=50*5, layer_sizes=[500]*20)
     elif args.net_type == 'FNO':
-        net = TFNO3d(n_modes_height = 4, n_modes_width = 4, n_modes_depth = 4, in_channels = 6, out_channels = 5, hidden_channels = 16, projection_channels = 32, factorization = 'tucker', rank = 0.42)
+        net = TFNO3d(n_modes_height = 4, n_modes_width = 4, n_modes_depth = 4, in_channels = 6, out_channels = 5, hidden_channels = 16, projection_channels = 32)#, factorization = 'tucker', rank = 0.42)
     else:
         raise TypeError('Specify a network type!')
     
@@ -82,6 +83,8 @@ def run(args):
         train_set = SOMAdata(path=data_path, mode='train', gpu_id=args.gpu, train_noise=False) 
         val_set = SOMAdata(path=data_path, mode='val', gpu_id=args.gpu, train_noise=False) 
         test_set = SOMAdata(path=data_path, mode='test', gpu_id=args.gpu) 
+
+    cur_time = datetime.now().strftime("%Y-%m-%d-%H")
     
     if args.train == "True":
         trainer.train(train=train_set,
@@ -96,15 +99,17 @@ def run(args):
                   model_path=args.model_path)
                 
         destroy_process_group()
+
+    
     elif args.train == "False":
         true, pred, param = predict(net=net, test_data=test_set, gpu_id=0,
                      checkpoint=args.model_path)
-        with open(f'/pscratch/sd/y/yixuans/{args.net_type}-{args.data}-predictions.pkl', 'wb') as f:
+        with open(f'/pscratch/sd/y/yixuans/{cur_time}_{args.net_type}-{args.data}-predictions.pkl', 'wb') as f:
             true_pred = {'true': true, 'pred': pred, 'param': param}
             pickle.dump(true_pred, f)
     else:
         true, pred = pred_rollout(net=net, test_data=test_set, gpu_id=args.gpu, checkpoint=args.model_path)
-        with open(f'/pscratch/sd/y/yixuans/{args.net_type}-{args.data}-rollout.pkl', 'wb') as f:
+        with open(f'/pscratch/sd/y/yixuans/{cur_time}_{args.net_type}-{args.data}-rollout.pkl', 'wb') as f:
             rollout = {'true': true, 'pred': pred}
             pickle.dump(rollout, f)
         print(true.shape, pred.shape)

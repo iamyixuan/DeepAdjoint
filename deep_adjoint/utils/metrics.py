@@ -92,14 +92,14 @@ def rMSE(true, pred):
         pred = pred[~mask]
     return np.mean(np.power(true - pred, 2) / (.5 * (np.power(true, 2) + np.power(pred, 2)+1e-12))) * 100
 
-def sMAPE(true, pred):
-    # if np.isnan(true).any():
-    #     true = true.reshape(-1,)
-    #     pred = pred.reshape(-1,)
-    #     mask = np.isnan(true)
-    #     true = true[~mask]
-    #     pred = pred[~mask]
-    return np.nanmean(np.abs(true - pred) / (.5 * (np.abs(true) + np.abs(pred)))) * 100
+# def sMAPE(true, pred):
+#     if np.isnan(true).any():
+#         true = true.reshape(-1,)
+#         pred = pred.reshape(-1,)
+#         mask = np.isnan(true)
+#         true = true[~mask]
+#         pred = pred[~mask]
+#     return np.nanmean(np.abs(true - pred) / (.5 * (np.abs(true) + np.abs(pred)))) * 100
 
 
 
