@@ -1,39 +1,173 @@
-import numpy as np
 import glob
-import pickle
-import random
 import os
-import torch
-import h5py
-from torch.utils.data import Dataset
-from .utils import split_idx
-from .scaler import DataScaler
-from sklearn.preprocessing import MinMaxScaler
+import pickle
+from abc import ABC, abstractmethod
 
+import h5py
+import numpy as np
+import torch
+from sklearn.preprocessing import MinMaxScaler
+from torch.utils.data import Dataset
+
+from .scaler import DataScaler
+from .utils import split_idx
+
+
+class BaseData(Dataset, ABC):
+    def __init__(self, mode) -> None:
+        super().__init__()
+        self.mode = mode
+        self.init()
+
+    def init(self):
+        self._split_data(test_size=0.1)
+        self.x, self.y = self.transform(self.x, self.y)
+
+    def __len__(self):
+        return self.x.shape[0]
+
+    def __getitem__(self, index):
+        x = torch.from_numpy(self.x[index]).float()
+        y = torch.from_numpy(self.y[index]).float()
+        return x, y
+
+    @abstractmethod
+    def _split_data(self, test_size=0.1):
+        """Split the data into train, val, and test sets
+        This should depend on the specific dataset.
+
+        For example, for SOMA data, the data is split
+        based on the individual simulations.
+        """
+        pass
+
+    def transform(self, x, y):
+        return x, y
+
+
+class SOMAdata(BaseData):
+    def __init__(
+        self,
+        path,
+        mode,
+        transform=True,
+    ):
+        """path: the hd5f file path, can be relative path
+        mode: ['trian', 'val', 'test']
+        """
+        super(SOMAdata, self).__init__(mode=mode)
+
+        DIR = os.path.dirname(os.path.abspath(__file__))
+        data_path = os.path.join(DIR, path)
+        self.data = h5py.File(data_path, "r")
+        self.keys = list(self.data.keys())
+
+        # var idx for the day avg dataset
+        self.var_idx = [7, 8, 11, 14, 15, -1]
+
+        """
+        Layer thickness: [4.539446, 13.05347]
+        Salinity: [34.01481, 34.24358].
+        Temperature: [5.144762, 18.84177]
+        Meridional Velocity: [3.82e-8, 0.906503]
+        Zonal Velocity: [6.95e-9, 1.640676]
+        """
+        data_min = np.array(
+            [34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9, 200]
+        )
+        data_max = np.array(
+            [34.24358, 18.84177, 13.05347, 0.906503, 1.640676, 2000]
+        )
+
+        self.scaler = DataScaler(data_min=data_min, data_max=data_max)
+        self.transform = transform
+
+        with open(
+            "/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl", "rb"
+        ) as f:
+            mask = pickle.load(f)
+
+        self.mask1 = mask["mask1"]
+        self.mask2 = mask["mask2"]
+        self.mask = np.logical_or(self.mask1, self.mask2)[0, 0, :, :, 0]
+
+    def transform(self, x, y):
+        """keep the ch first and move the time axis to the second"""
+        x = np.transpose(x, axes=[0, 3, 1, 2])
+        y = np.transpose(y, axes=[0, 3, 1, 2])
+        return x, y
+
+    def _split_data(self, test_size=0.1):
+        train_key, val_key, test_key = split_idx(len(self.keys), test_size)
+        if self.mode == "train":
+            self.keys_in_use = [self.keys[i] for i in train_key]
+        elif self.mode == "val":
+            self.keys_in_use = [self.keys[i] for i in val_key]
+        elif self.mode == "test":
+            self.keys_in_use = [self.keys[i] for i in test_key]
+        else:
+            raise NameError(f"Mode name {self.mode} not found!")
+
+        x = []
+        y = []
+
+        for key in self.keys_in_use:
+            data = self.data[key][..., self.var_idx]
+            bc_mask = np.broadcast_to(
+                self.mask[np.newaxis, ..., np.newaxis], data.shape
+            )
+            data[bc_mask] = 0.0  # setting values outside the domain to 0
+            x, y = self.get_time_series(data)
+            x.append(x)
+            y.append(y)
+        self.x = np.concatenate(x, axis=0).squeeze()
+        self.y = np.concatenate(y, axis=0).squeeze()
+
+    def get_time_series(self, data, hist_len=1, horizon=1):
+        """Get the time series data from the given data
+        data: np.array of shape (n, 60, 100, 100, 16)
+        """
+        x = []
+        y = []
+        for i in range(data.shape[0] - hist_len - horizon + 1):
+            x.append(data[i : i + hist_len])
+            y.append(data[i + hist_len : i + hist_len + horizon])
+
+        x = np.stack(x, axis=0)
+        y = np.stack(y, axis=0)
+        return x, y
 
 
 class SOMA_PCA_Data(Dataset):
     def __init__(self, path, mode, hist_len=1) -> None:
         super().__init__()
-        f = h5py.File(path, 'r')
-        data = f['PCA_data'][:]
-        self.var_idx = [3, 6, 10, 14, 15] 
+        f = h5py.File(path, "r")
+        data = f["PCA_data"][:]
+        self.var_idx = [3, 6, 10, 14, 15]
         self.scaler = MinMaxScaler()
 
         train_idx, val_idx, test_idx = split_idx(data.shape[0])
-        self.scaler.fit(data[train_idx][..., self.var_idx].reshape(len(train_idx), -1)) # fit a minmax scaler using the training data
+        self.scaler.fit(
+            data[train_idx][..., self.var_idx].reshape(len(train_idx), -1)
+        )  # fit a minmax scaler using the training data
 
-        if mode == 'train':
-            self.data = data[train_idx][..., self.var_idx].reshape(len(train_idx), -1)
-        elif mode == 'val':
-            self.data = data[val_idx][..., self.var_idx].reshape(len(val_idx), -1)
-        elif mode == 'test':
-            self.data = data[test_idx][..., self.var_idx].reshape(len(test_idx), -1)
+        if mode == "train":
+            self.data = data[train_idx][..., self.var_idx].reshape(
+                len(train_idx), -1
+            )
+        elif mode == "val":
+            self.data = data[val_idx][..., self.var_idx].reshape(
+                len(val_idx), -1
+            )
+        elif mode == "test":
+            self.data = data[test_idx][..., self.var_idx].reshape(
+                len(test_idx), -1
+            )
         else:
             raise NameError(f"Mode name {mode} not found!")
 
-        self.data = self.scaler.transform(self.data) 
-        
+        self.data = self.scaler.transform(self.data)
+
         self.x, self.y = self.prepare_data(hist_len=hist_len)
         if self.x.shape[1] == 1:
             self.x = np.squeeze(self.x)
@@ -42,181 +176,82 @@ class SOMA_PCA_Data(Dataset):
         x = []
         y = []
         for i in range(self.data.shape[0] - hist_len):
-            x.append(self.data[i:i+hist_len])
-            y.append(self.data[i+hist_len])
-        
+            x.append(self.data[i : i + hist_len])
+            y.append(self.data[i + hist_len])
+
         x = np.stack(x, axis=0)
         y = np.stack(y, axis=0)
         return x, y
-    
+
     def __len__(self):
         return self.x.shape[0]
-    
+
     def __getitem__(self, index):
         x = torch.from_numpy(self.x[index]).float()
         y = torch.from_numpy(self.y[index]).float()
         return x, y
 
 
-
 class GlacierData(Dataset):
-    def __init__(self, path, mode='train', portion='u'):
+    def __init__(self, path, mode="train", portion="u"):
         super().__init__()
         # DIR = os.path.dirname(os.path.abspath(__file__))
         # path = os.path.join(DIR, path)
-        data = np.load(path) # use the first half for training
+        data = np.load(path)  # use the first half for training
         self.portion = portion
-        self.inputs = data['inputs']
-        self.uout = data['uout']
-        self.jac_beta = data['jac_beta']
-        self.jac_u = data['jac_u']
+        self.inputs = data["inputs"]
+        self.uout = data["uout"]
+        self.jac_beta = data["jac_beta"]
+        self.jac_u = data["jac_u"]
 
         train_idx, val_idx, test_idx = split_idx(self.inputs.shape[0])
-        if mode == 'train':
+        if mode == "train":
             self.inputs = self.inputs[train_idx]
             self.uout = self.uout[train_idx]
             self.jac_beta = self.jac_beta[train_idx]
             self.jac_u = self.jac_u[train_idx]
 
-        elif mode == 'val':
+        elif mode == "val":
             self.inputs = self.inputs[val_idx]
             self.uout = self.uout[val_idx]
             self.jac_beta = self.jac_beta[val_idx]
             self.jac_u = self.jac_u[val_idx]
-        elif mode == 'test':
+        elif mode == "test":
             self.inputs = self.inputs[test_idx]
             self.uout = self.uout[test_idx]
             self.jac_beta = self.jac_beta[test_idx]
             self.jac_u = self.jac_u[test_idx]
+
     def __len__(self):
         return self.inputs.shape[0]
+
     def __getitem__(self, idx):
         x = torch.from_numpy(self.inputs[idx]).float()
         y = torch.from_numpy(self.uout[idx]).float()
-        if self.portion == 'u':
+        if self.portion == "u":
             adj = torch.from_numpy(self.jac_u)[idx].float()
-        elif self.portion == 'p':
+        elif self.portion == "p":
             adj = torch.from_numpy(self.jac_beta)[idx].float()
         else:
             raise Exception(f"Portion type {self.portion} not recognized!")
         return x, (y, adj)
-    
-class SOMAdata(Dataset):
-    def __init__(self, path, mode, gpu_id, time_steps_per_forward=30, transform=True, train_noise=False, loss_mask=False):
-        '''path: the hd5f file path, can be relative path
-        mode: ['trian', 'val', 'test']
-        '''
-        super(SOMAdata, self).__init__()
-        self.mode = mode
-        self.train_noise = train_noise
-
-        DIR = os.path.dirname(os.path.abspath(__file__))
-        data_path = os.path.join(DIR, path)
-        self.data = h5py.File(data_path, 'r')
-        keys = list(self.data.keys())
-
-        random.Random(0).shuffle(keys)
-        TRAIN_SIZE = int(0.6 * len(keys))
-        TEST_SIZE = int(0.1 * len(keys))
-
-        self.gpu_id = gpu_id
-        self.time_steps_per_forward = time_steps_per_forward
-        
-        # specify the range of state variables in order
-        '''
-        Layer thickness: [4.539446, 13.05347]
-        Salinity: [34.01481, 34.24358].
-        Temperature: [5.144762, 18.84177]
-        Meridional Velocity: [3.82e-8, 0.906503]
-        Zonal Velocity: [6.95e-9, 1.640676]
-        '''
-        data_min = np.array([34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9, 200]) 
-        data_max = np.array([34.24358, 18.84177, 13.05347, 0.906503, 1.640676, 2000])
-
-        self.scaler = DataScaler(data_min=data_min, data_max=data_max)
-        self.transform = transform
-
-
-        with open('/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl', 'rb') as f:
-                mask = pickle.load(f)
-            
-        self.mask1 = mask['mask1']
-        self.mask2 = mask['mask2']
-        self.mask = np.logical_or(self.mask1, self.mask2)[0,0,:,:,0]
-
-        # create a mask for loss calculation
-        if loss_mask:
-
-            self.loss_mask = np.logical_or(self.mask1, self.mask2)[0,0,:,:,0] # mask only in x,y plane thus size of [100, 100] this will broadcast in element wise product
-            self.loss_mask = np.array(~self.loss_mask, dtype=int) # True - 0; False - 1
-            self.loss_mask = torch.from_numpy(self.loss_mask).float()
-
-        if mode == 'train':
-            self.keys = keys[:TRAIN_SIZE]
-        elif mode == 'val':
-            self.keys = keys[TRAIN_SIZE: TRAIN_SIZE + TEST_SIZE]
-        elif mode == 'test':
-            self.keys = keys[-TEST_SIZE:]
-            print("Test set keys", self.keys)
-        else:
-            raise Exception(f'Invalid mode: {mode}, please select from "train", "val", and "test".')
-
-    def preprocess(self, x, y):
-        '''Prepare data as the input-output pair for a single forward run
-        x has the shape of (60, 100, 100, 5)
-        the goal is to first move the ch axis to the second -> (5, 60, 100, 100)
-        then create input output pair where the input shape is (5, 60, 100, 100) and the output shape is (16, 60, 100, 100)
-        idx 14 is the varying parameter for the input.
-
-        '''
-        assert len(x.shape) == 4, "Incorrect data shape!"
-        var_idx = [7, 8, 11, 14, 15, -1] #[3, 6, 10, 14, 15] # needs adjusting for the daily averaged datasets [7, 8, 11, 14, 15] 
-
-        x = x[..., var_idx]
-        y = y[..., var_idx]
-
-        if self.transform:
-            x = self.scaler.transform(x)
-            y = self.scaler.transform(y)
-
-        bc_mask = np.broadcast_to(self.mask[np.newaxis, ..., np.newaxis], x.shape)
-        x[bc_mask] = 0
-        y[bc_mask] = 0
-
-
-        x_in = np.transpose(x, axes=[3, 0, 1, 2])
-        x_out = np.transpose(y, axes=[3, 0, 1, 2])[:-1, ...] # remove the parameter dim
-
-
-        if self.train_noise and self.mode != 'test':
-            noise = np.random.normal(loc=0.0, scale=3e-4, size=x_in.shape)  #http://proceedings.mlr.press/v119/sanchez-gonzalez20a/sanchez-gonzalez20a.pdf
-            x_in = x_in + noise
-        return (x_in, x_out)
-
-    def __len__(self):
-        return len(self.keys) * (self.time_steps_per_forward - 1) # b/c n  time steps can create n-1 input-output pairs
-        
-    def __getitem__(self, index):
-        # get the key idx 
-        key_idx = int(index / (self.time_steps_per_forward - 1))
-        in_group_idx = index % (self.time_steps_per_forward - 1)
-        data_x = self.data[self.keys[key_idx]][in_group_idx]
-        data_y = self.data[self.keys[key_idx]][in_group_idx + 1]
-        x, y = self.preprocess(data_x, data_y)
-        assert not np.any(np.isnan(x)) and not np.any(np.isnan(y)), "Data contains NaNs!!!"
-        return torch.from_numpy(x).float(), torch.from_numpy(y).float()
 
 
 class MultiStepData(Dataset):
-    def __init__(self, data_name='burgers', path='./deep_adjoint/Data/mixed_nu/', mode='Train'):
+    def __init__(
+        self,
+        data_name="burgers",
+        path="./deep_adjoint/Data/mixed_nu/",
+        mode="Train",
+    ):
         super(MultiStepData, self).__init__()
 
-        if mode == 'val':
-            path = path + 'val/'
-        elif mode == 'test':
+        if mode == "val":
+            path = path + "val/"
+        elif mode == "test":
             pass
 
-        if data_name == 'burgers':
+        if data_name == "burgers":
             data = MultiStepBurgers(path)
         self.sol = data.sol
         self.adj = data.adj
@@ -230,28 +265,33 @@ class MultiStepData(Dataset):
             torch.from_numpy(self.adj[idx, :, :, :-1]).float(),
         )
 
+
 class MultiStepBurgers:
     def __init__(self, path, aug_state=True) -> None:
         self.path = path
         self.aug_state = aug_state
         self.sol, self.adj = self.combineData()
+
     def combineData(self):
         files = glob.glob(self.path + "*.pkl")
         sol = []
         adj = []
         for f in files:
-            with open(f, 'rb') as f:
+            with open(f, "rb") as f:
                 tmp = pickle.load(f)
                 nu = np.repeat(tmp[2], tmp[0].shape[0]).reshape(-1, 1)
-                if self.aug_state:# augment the state variables with the external model parameter nu
-                    sol_tmp = np.concatenate([tmp[0], nu], axis=1) # (201, 128) -> (201, 129), the lasting being \nu.
+                if (
+                    self.aug_state
+                ):  # augment the state variables with the external model parameter nu
+                    sol_tmp = np.concatenate(
+                        [tmp[0], nu], axis=1
+                    )  # (201, 128) -> (201, 129), the lasting being \nu.
                 else:
                     sol_tmp = tmp[0]
                 sol.append(sol_tmp)
                 adj.append(tmp[1])
         return np.array(sol), np.array(adj)
 
-        
 
 def combine_burgers_data(folderPath):
     """combining all the datasets into one"""

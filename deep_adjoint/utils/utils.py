@@ -1,14 +1,20 @@
 import numpy as np
 from sklearn.decomposition import PCA
 
-def split_idx(idx_len):
+
+def split_idx(idx_len, test_size):
     rs = np.random.RandomState(0)
+    test_len = int(test_size * idx_len)
+
     idx = rs.permutation(idx_len)
-    train_size = int(.5 * idx_len)
-    test_size = int(.25 * idx_len)
+    train_val_size = idx_len - test_len
+
+    train_size = int(0.8 * train_val_size)
+    val_size = int(0.2 * train_val_size)
 
     train_idx = idx[:train_size]
-    val_idx = idx[train_size:train_size + test_size]
+    val_idx = idx[train_size : train_size + val_size]
+
     test_idx = idx[-test_size:]
     return train_idx, val_idx, test_idx
 
@@ -16,6 +22,7 @@ def split_idx(idx_len):
 class ChannelScaler:
     def __init__(self) -> None:
         pass
+
     def centering(self, data, axis=1):
         m_ = np.mean(data, axis=axis, keepdims=True)
         std_ = np.std(data, axis=axis, keepdims=True)
@@ -26,11 +33,13 @@ class ChannelScaler:
 
         std_[mask] = 1
         return (data - m_) / std_
+
     def transform(self, x):
         return (x - self.m_) / self.std_
-    
+
     def inverse_transform(self, x):
         return x * self.std_ + self.m_
+
 
 def channel_pca(data):
     batch = data.shape[0]
@@ -39,8 +48,7 @@ def channel_pca(data):
     PCAs = []
     for i in range(ch):
         pca = PCA(n_components=50)
-        pca.fit(data_pca[...,i])
+        pca.fit(data_pca[..., i])
         PCAs.append(pca)
 
     return PCAs
-
