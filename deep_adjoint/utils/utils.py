@@ -15,7 +15,7 @@ def split_idx(idx_len, test_size):
     train_idx = idx[:train_size]
     val_idx = idx[train_size : train_size + val_size]
 
-    test_idx = idx[-test_size:]
+    test_idx = idx[-test_len:]
     return train_idx, val_idx, test_idx
 
 

@@ -10,17 +10,17 @@ class ChannelStandardScaler:
         if kwargs.get("mask") is not None:
             mask = kwargs.get("mask")
             bc_mask = np.broadcast_to(
-                mask[np.newaxis, ..., np.newaxis], data.shape
+                mask[np.newaxis, np.newaxis, ...,], data.shape
             )
-            data[bc_mask] = float('nan')  # setting values outside the domain to 0
+            data[bc_mask] = np.nan  # setting values outside the domain to 0
 
-        m_ = torch.nanmean(data, dim=dim_to_reduce, keepdims=True)
-        std_ = torch.nanstd(data, dim=dim_to_reduce, keepdims=True)
+        m_ = np.nanmean(data, axis=dim_to_reduce, keepdims=True)
+        std_ = np.nanstd(data, axis=dim_to_reduce, keepdims=True)
 
         std_[std_ == 0] = 1
 
-        self.m_ = m_
-        self.std_ = std_
+        self.m_ = torch.from_numpy(m_)
+        self.std_ = torch.from_numpy(std_)
 
     def transform(self, x):
         x = (x - self.m_) / self.std_

@@ -69,7 +69,7 @@ def run(args):
 
         train_set = SOMAdata(path=data_path, mode="train")
         val_set = SOMAdata(path=data_path, mode="val")
-        test_set = SOMAdata(path=data_path, mode="test")
+        # test_set = SOMAdata(path=data_path, mode="test")
 
     if args.net_type == "ResNet":
         net = OneStepSolve3D(

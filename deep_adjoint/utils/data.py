@@ -17,7 +17,6 @@ class BaseData(Dataset, ABC):
     def __init__(self, mode) -> None:
         super().__init__()
         self.mode = mode
-        self.init()
 
     def init(self):
         self._split_data(test_size=0.1)
@@ -80,7 +79,6 @@ class SOMAdata(BaseData):
         )
 
         self.scaler = DataScaler(data_min=data_min, data_max=data_max)
-        self.transform = transform
 
         with open(
             "/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl", "rb"
@@ -90,11 +88,12 @@ class SOMAdata(BaseData):
         self.mask1 = mask["mask1"]
         self.mask2 = mask["mask2"]
         self.mask = np.logical_or(self.mask1, self.mask2)[0, 0, :, :, 0]
+        self.init()
 
     def transform(self, x, y):
         """keep the ch first and move the time axis to the second"""
-        x = np.transpose(x, axes=[0, 3, 1, 2])
-        y = np.transpose(y, axes=[0, 3, 1, 2])
+        x = np.transpose(x, axes=[0, 4, 1, 2, 3])
+        y = np.transpose(y, axes=[0, 4, 1, 2, 3])
         return x, y
 
     def _split_data(self, test_size=0.1):
@@ -117,9 +116,9 @@ class SOMAdata(BaseData):
                 self.mask[np.newaxis, ..., np.newaxis], data.shape
             )
             data[bc_mask] = 0.0  # setting values outside the domain to 0
-            x, y = self.get_time_series(data)
-            x.append(x)
-            y.append(y)
+            x_, y_ = self.get_time_series(data)
+            x.append(x_)
+            y.append(y_)
         self.x = np.concatenate(x, axis=0).squeeze()
         self.y = np.concatenate(y, axis=0).squeeze()
 
