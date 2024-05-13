@@ -21,3 +21,4 @@ eval_plots/
 neuraloperator/
 notebooks/
 *.npy
+*.egg-info/
