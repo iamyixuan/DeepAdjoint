@@ -1,14 +1,13 @@
 import argparse
 import os
 import pickle
-from datetime import datetime
 
 import torch
-from neuralop.models import TFNO3d
 from torch.distributed import init_process_group
 
+from deep_adjoint.model.FNOs import FNO3d
 from deep_adjoint.model.ForwardSurrogate import FNN, OneStepSolve3D
-from deep_adjoint.train.trainer import (Trainer, destroy_process_group,
+from deep_adjoint.train.trainer import (TrainerSOMA, destroy_process_group,
                                         pred_rollout, predict)
 from deep_adjoint.utils.data import SOMA_PCA_Data, SOMAdata
 from pytorch3dunet.unet3d.model import UNet3D
@@ -44,35 +43,6 @@ def run(args):
     #     def print_pass(*args):
     #         pass
     #     builtins.print = print_pass
-
-    if args.net_type == "ResNet":
-        net = OneStepSolve3D(
-            in_ch=6,
-            out_ch=5,
-            hidden=args.hidden,
-            num_res_block=args.num_res_block,
-        )
-    elif args.net_type == "UNet":
-        net = UNet3D(in_channels=6, out_channels=5)
-    elif args.net_type == "FNN":
-        net = FNN(in_dim=50 * 5, out_dim=50 * 5, layer_sizes=[500] * 20)
-    elif args.net_type == "FNO":
-        net = TFNO3d(
-            n_modes_height=4,
-            n_modes_width=4,
-            n_modes_depth=4,
-            in_channels=6,
-            out_channels=5,
-            hidden_channels=16,
-            projection_channels=32,
-        )  # , factorization = 'tucker', rank = 0.42)
-    else:
-        raise TypeError("Specify a network type!")
-
-    trainer = Trainer(
-        net=net, optimizer_name="Adam", loss_name="MSE", gpu_id=args.gpu
-    )
-
     if args.net_type == "FNN":
         print("Using PCA data...")
         data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/varyGM/PCA_data.h5"
@@ -96,15 +66,41 @@ def run(args):
             data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM-dayAvg-2.hdf5"
         else:
             raise TypeError("Dataset not recognized!")
-        train_set = SOMAdata(
-            path=data_path, mode="train", gpu_id=args.gpu, train_noise=False
-        )
-        val_set = SOMAdata(
-            path=data_path, mode="val", gpu_id=args.gpu, train_noise=False
-        )
-        test_set = SOMAdata(path=data_path, mode="test", gpu_id=args.gpu)
 
-    cur_time = datetime.now().strftime("%Y-%m-%d-%H")
+        train_set = SOMAdata(path=data_path, mode="train")
+        val_set = SOMAdata(path=data_path, mode="val")
+        test_set = SOMAdata(path=data_path, mode="test")
+
+    if args.net_type == "ResNet":
+        net = OneStepSolve3D(
+            in_ch=6,
+            out_ch=5,
+            hidden=args.hidden,
+            num_res_block=args.num_res_block,
+        )
+    elif args.net_type == "UNet":
+        net = UNet3D(in_channels=6, out_channels=5)
+    elif args.net_type == "FNN":
+        net = FNN(in_dim=50 * 5, out_dim=50 * 5, layer_sizes=[500] * 20)
+    elif args.net_type == "FNO":
+        net = FNO3d(
+            n_modes_height=4,
+            n_modes_width=4,
+            n_modes_depth=4,
+            in_channels=6,
+            out_channels=5,
+            hidden_channels=16,
+            projection_channels=32,
+            scaler=True,
+            train_data=(train_set.x, train_set.y),
+            mask=train_set.mask,
+        )
+    else:
+        raise TypeError("Specify a network type!")
+
+    trainer = TrainerSOMA(
+        net=net, optimizer_name="Adam", loss_name="MSE", gpu_id=args.gpu
+    )
 
     if args.train == "True":
         trainer.train(
@@ -127,7 +123,7 @@ def run(args):
             net=net, test_data=test_set, gpu_id=0, checkpoint=args.model_path
         )
         with open(
-            f"/pscratch/sd/y/yixuans/{cur_time}_{args.net_type}-{args.data}-predictions.pkl",
+            f"{trainer.exp_path}/test-predictions.pkl",
             "wb",
         ) as f:
             true_pred = {"true": true, "pred": pred, "param": param}
@@ -140,7 +136,7 @@ def run(args):
             checkpoint=args.model_path,
         )
         with open(
-            f"/pscratch/sd/y/yixuans/{cur_time}_{args.net_type}-{args.data}-rollout.pkl",
+            f"{trainer.exp_path}/test-rollout.pkl",
             "wb",
         ) as f:
             rollout = {"true": true, "pred": pred}

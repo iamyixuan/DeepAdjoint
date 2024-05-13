@@ -19,7 +19,7 @@ def split_idx(idx_len, test_size):
     return train_idx, val_idx, test_idx
 
 
-class ChannelScaler:
+class ChannelStandardScaler:
     def __init__(self) -> None:
         pass
 

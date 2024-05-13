@@ -1,9 +1,10 @@
+import logging
 import os
-from datetime import datetime
+from abc import ABC, abstractmethod
 
 import numpy as np
 import torch
-from torch.distributed import destroy_process_group, init_process_group
+from torch.distributed import init_process_group
 from torch.func import jacrev
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -11,7 +12,6 @@ from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
 from ..utils import FNO_losses
-from ..utils.logger import Logger
 from ..utils.losses import Losses
 
 
@@ -23,14 +23,67 @@ def ddp_setup(rank, world_size):
     )
 
 
-class Trainer:
+class BaseTrainer(ABC):
+    def __init__(
+        self,
+        net,
+        optimizer_name,
+        loss_name,
+        gpu_id=None,
+        **kwargs,
+    ) -> None:
+        if optimizer_name == "Adam":
+            self.optimizer = torch.optim.Adam
+
+        self.gpu_id = gpu_id
+        if self.gpu_id is not None:
+            self.net = net.to(gpu_id)
+        else:
+            self.net = net
+
+        self.ls_fn = Losses(loss_name)()
+
+        # set up logging
+        if kwargs.get("model_type") is not None:
+            model_type = kwargs.get("model_type")
+        if kwargs.get("data_name") is not None:
+            data_name = kwargs.get("data_name")
+
+        self.exp_path = f"./experiments/{model_type}-{data_name}-{loss_name}/"
+        if not os.path.exists(self.exp_path):
+            os.makedirs(self.exp_path)
+
+        logging.basicConfig(
+            level=logging.INFO,
+            filename=f"./experiment/{model_type}-{data_name}-{loss_name}/log.txt",
+            filemode="w",
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
+        self.logger = logging.getLogger(__name__)
+
+        if int(os.environ["TRAIN"]) == 1:
+            self.net = DDP(
+                net, device_ids=[self.gpu_id], find_unused_parameters=True
+            )
+
+    @abstractmethod
+    def train(self):
+        pass
+
+    @abstractmethod
+    def predict(self):
+        pass
+
+
+class TrainerSOMA(BaseTrainer):
     """
     Basic trainer class
     """
 
     def __init__(
         self, net, optimizer_name, loss_name, gpu_id, dual_train=False
-    ) -> None:
+    ):
+        super().__init__(net, optimizer_name, loss_name, gpu_id)
         self.net = net
         if optimizer_name == "Adam":
             self.optimizer = torch.optim.Adam
@@ -39,8 +92,8 @@ class Trainer:
 
         if os.environ["LOSS"] == "FNO":
             print("Using Lp loss...")
-            # self.ls_fn = FNO_losses.LpLoss(d = 4, p = 2)
-            self.ls_fn = FNO_losses.MSE_ACCLoss()
+            self.ls_fn = FNO_losses.LpLoss(d=4, p=2)
+            # self.ls_fn = FNO_losses.MSE_ACCLoss()
         else:
             self.ls_fn = Losses(loss_name)()
         self.net = net.to(gpu_id)
@@ -50,8 +103,6 @@ class Trainer:
                 net, device_ids=[self.gpu_id], find_unused_parameters=True
             )
         self.dual_train = dual_train
-
-        self.now = datetime.now().strftime("%Y-%m-%d")
 
     def train(
         self,
@@ -70,18 +121,8 @@ class Trainer:
             train: training dataset
             val: validation dataset
         """
-
-        try:
-            if not os.path.exists(f"./checkpoints/{self.now}_{model_name}/"):
-                print("Creating model saving folder...")
-                os.makedirs(f"./checkpoints/{self.now}_{model_name}/")
-        except:
-            pass
-
-        self.logger = Logger(f"./checkpoints/{self.now}_{model_name}/")
-
         if "load_model" in kwargs:
-            if kwargs.get("load_model") == True:
+            if kwargs.get("load_model") is True:
                 print("Loading pretrained model...")
                 assert "model_path" in kwargs, "Provide a saved model path!"
                 model_path = kwargs.get("model_path")
@@ -101,10 +142,6 @@ class Trainer:
         else:
             train_loader = DataLoader(train, batch_size=batch_size)
             val_loader = DataLoader(val, batch_size=10)
-
-        if mask is not None:
-            print("Masking the loss...")
-            mask = train.loss_mask.to(self.gpu_id)
 
         for val in val_loader:
             if self.dual_train:
@@ -150,22 +187,37 @@ class Trainer:
                 best_val = val_loss.item()
                 torch.save(
                     self.net.module.state_dict(),
-                    f"./checkpoints/{self.now}_{model_name}/best_model",
+                    f"{self.exp_path}/best_model_state.pt",
                 )
 
-            if self.gpu_id == 0 and ep % save_freq == 0:
-                torch.save(
-                    self.net.module.state_dict(),
-                    f"./checkpoints/{self.now}_{model_name}/model_saved_ep_{ep}",
-                )
+            # if self.gpu_id == 0 and ep % save_freq == 0:
+            #     torch.save(
+            #         self.net.module.state_dict(),
+            #         f"./checkpoints/{self.now}_{model_name}/model_saved_ep_{ep}",
+            #     )
 
-            self.logger.record("epoch", ep + 1)
-            self.logger.record("train_loss", np.mean(running_loss))
-            self.logger.record("val_loss", val_loss.item())
-            # self.logger.record('train_metrics', np.mean(np.array(running_metrics), axis=0))
-            # self.logger.record('val_metrics', val_metrics)
-            self.logger.print()
-            self.logger.save()
+            self.logger.info(
+                f"Epoch: {ep + 1}, Train Loss: {np.mean(running_loss)}, Val Loss: {val_loss.item()}"
+            )
+
+        def predict(self, test_data, checkpoint=None):
+            test_loader = DataLoader(test_data, batch_size=12)
+            y_true = []
+            y_pred = []
+            gm = []
+            self.net.eval()
+            self.net.to(self.gpu_id)
+            if checkpoint is not None:
+                self.net.load_state_dict(torch.load(checkpoint))
+            for x, y in tqdm(test_loader):
+                x = x.to(self.gpu_id)
+                y = y.to(self.gpu_id)
+                with torch.no_grad():
+                    pred = self.net(x)
+                    y_true.append(y.detach().cpu().numpy())
+                    y_pred.append(pred.detach().cpu().numpy())
+                    gm.append(x.detach().cpu().numpy())
+            return y_true, y_pred, gm
 
 
 def predict(net, gpu_id, test_data, checkpoint=None):
@@ -327,9 +379,3 @@ class AdjointTrainer(Trainer):
             return grad[:, -79:]
         else:
             raise Exception(f'"{portion}" is not in the list...')
-
-
-class MultiStepTrainer(Trainer):
-    def __init__(self, net, epochs) -> None:
-        super(MultiStepTrainer, self).__init__(net, epochs)
-        pass
