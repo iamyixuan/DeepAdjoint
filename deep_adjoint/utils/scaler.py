@@ -3,24 +3,37 @@ import torch
 
 
 class ChannelStandardScaler:
-    def __init__(self, data, **kwargs) -> None:
-        self.init(data, **kwargs)
+    def __init__(self, **kwargs) -> None:
+        if kwargs.get("mean") is not None and kwargs.get("std") is not None:
+            self.m_ = kwargs.get("mean")
+            self.std_ = kwargs.get("std")
+        elif kwargs.get("data") is not None:
+            self.init(data, **kwargs)
+        else:
+            raise ValueError("Either mean and std or data should be provided")
+
+        self.get_stats()
 
     def init(self, data, dim_to_reduce=(0, 2, 3, 4), **kwargs):
         if kwargs.get("mask") is not None:
             mask = kwargs.get("mask")
             bc_mask = np.broadcast_to(
-                mask[np.newaxis, np.newaxis, ...,], data.shape
+                mask[
+                    np.newaxis,
+                    np.newaxis,
+                    ...,
+                ],
+                data.shape,
             )
             data[bc_mask] = np.nan  # setting values outside the domain to 0
 
-        m_ = np.nanmean(data, axis=dim_to_reduce, keepdims=True)
-        std_ = np.nanstd(data, axis=dim_to_reduce, keepdims=True)
+        self.m_ = np.nanmean(data, axis=dim_to_reduce, keepdims=True)
+        self.std_ = np.nanstd(data, axis=dim_to_reduce, keepdims=True)
 
-        std_[std_ == 0] = 1
-
-        self.m_ = torch.from_numpy(m_)
-        self.std_ = torch.from_numpy(std_)
+    def get_stats(self):
+        self.std_[self.std_ == 0] = 1
+        self.m_ = torch.from_numpy(self.m_).float()
+        self.std_ = torch.from_numpy(self.std_).float()
 
     def transform(self, x):
         x = (x - self.m_) / self.std_

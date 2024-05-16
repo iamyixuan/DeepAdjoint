@@ -92,7 +92,7 @@ def run(args):
             hidden_channels=16,
             projection_channels=32,
             scaler=True,
-            train_data=(train_set.x, train_set.y),
+            train_data_stats=(train_set.mean, train_set.std),
             mask=train_set.mask,
         )
     else:

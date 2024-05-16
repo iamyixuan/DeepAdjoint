@@ -136,6 +136,26 @@ class SOMAdata(BaseData):
         train_key, val_key, test_key = split_idx(len(self.keys), test_size)
         if self.mode == "train":
             self.keys_in_use = [self.keys[i] for i in train_key]
+            # compute the statistics for the training data from sampling
+            sampled_idx = np.random.randint(
+                0, self.data[self.keys_in_use[0]].shape[0], 100
+            )
+            data = self.data[self.keys_in_use[0]][
+                sampled_idx, :, :, :, self.var_idx
+            ]
+
+            bc_mask = np.broadcast_to(
+                self.mask[np.newaxis, ..., np.newaxis], data.shape
+            )
+            data[bc_mask] = np.nan
+            # at this point the channel is the last axis
+            self.mean = np.nanmean(data, axis=(0, 1, 2, 3), keepdims=True)
+            self.std = np.nanstd(data, axis=(0, 1, 2, 3), keepdims=True)
+
+            # move the channel axis to the second for data loading
+            self.mean = np.permute(self.mean, [0, 4, 1, 2, 3])
+            self.std = np.permute(self.std, [0, 4, 1, 2, 3])
+
         elif self.mode == "val":
             self.keys_in_use = [self.keys[i] for i in val_key]
         elif self.mode == "test":
@@ -155,7 +175,6 @@ class SOMAdata(BaseData):
             ...,
             self.var_idx,
         ]
-
         return x.squeeze(), y.squeeze()
 
 
