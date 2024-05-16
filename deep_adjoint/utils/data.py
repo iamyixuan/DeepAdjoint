@@ -18,6 +18,7 @@ class BaseData(Dataset, ABC):
         super().__init__()
         self.mode = mode
 
+    @abstractmethod
     def init(self):
         self._split_data(test_size=0.1)
         self.x, self.y = self.transform(self.x, self.y)
@@ -49,6 +50,8 @@ class SOMAdata(BaseData):
         self,
         path,
         mode,
+        hist_len=1,
+        horizon=1,
         transform=True,
     ):
         """path: the hd5f file path, can be relative path
@@ -60,6 +63,8 @@ class SOMAdata(BaseData):
         data_path = os.path.join(DIR, path)
         self.data = h5py.File(data_path, "r")
         self.keys = list(self.data.keys())
+        self.hist_len = hist_len
+        self.horizon = horizon
 
         # var idx for the day avg dataset
         self.var_idx = [7, 8, 11, 14, 15, -1]
@@ -90,6 +95,37 @@ class SOMAdata(BaseData):
         self.mask = np.logical_or(self.mask1, self.mask2)[0, 0, :, :, 0]
         self.init()
 
+    def init(self):
+        self._split_data(test_size=0.1)
+
+        self.num_samples = (
+            self.data[self.keys_in_use[0]].shape[0]
+            - self.hist_len
+            - self.horizon
+            + 1
+        ) * len(self.keys_in_use)
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, index):
+        key_idx = index // self.num_samples
+        sample_idx = index % self.num_samples
+
+        data_batch = self.data[self.keys_in_use[key_idx]]
+        x, y = self.get_time_series(data_batch, sample_idx)
+
+        x = self.transform(x)
+        y = self.transform(y)
+
+        bc_mask = np.broadcast_to(
+            self.mask[np.newaxis, ..., np.newaxis], data.shape
+        )
+        x[bc_mask] = 0.0
+        y[bc_mask] = 0.0
+
+        return torch.from_numpy(x).float(), torch.from_numpy(y).float()
+
     def transform(self, x, y):
         """keep the ch first and move the time axis to the second"""
         x = np.transpose(x, axes=[0, 4, 1, 2, 3])
@@ -107,34 +143,20 @@ class SOMAdata(BaseData):
         else:
             raise NameError(f"Mode name {self.mode} not found!")
 
-        x = []
-        y = []
-
-        for key in self.keys_in_use:
-            data = self.data[key][..., self.var_idx]
-            bc_mask = np.broadcast_to(
-                self.mask[np.newaxis, ..., np.newaxis], data.shape
-            )
-            data[bc_mask] = 0.0  # setting values outside the domain to 0
-            x_, y_ = self.get_time_series(data)
-            x.append(x_)
-            y.append(y_)
-        self.x = np.concatenate(x, axis=0).squeeze()
-        self.y = np.concatenate(y, axis=0).squeeze()
-
-    def get_time_series(self, data, hist_len=1, horizon=1):
+    def get_time_series(self, data, i):
         """Get the time series data from the given data
         data: np.array of shape (n, 60, 100, 100, 16)
-        """
-        x = []
-        y = []
-        for i in range(data.shape[0] - hist_len - horizon + 1):
-            x.append(data[i : i + hist_len])
-            y.append(data[i + hist_len : i + hist_len + horizon])
 
-        x = np.stack(x, axis=0)
-        y = np.stack(y, axis=0)
-        return x, y
+        n is the number of time steps in a SINGLE forward simulation
+        """
+        x = data[i : i + self.hist_len, ..., self.var_idx]
+        y = data[
+            i + self.hist_len : i + self.hist_len + self.horizon,
+            ...,
+            self.var_idx,
+        ]
+
+        return x.squeeze(), y.squeeze()
 
 
 class SOMA_PCA_Data(Dataset):
