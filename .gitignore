@@ -20,5 +20,6 @@ saved/
 eval_plots/
 neuraloperator/
 notebooks/
+experiments/
 *.npy
 *.egg-info/

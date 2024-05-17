@@ -18,7 +18,9 @@ def main(args):
 
     sol, grad = solver.get_data()
 
-    with open("./AdjointMatchingNN/Data/mixed_nu/val/" + str(args.NU)[:8] + "-nu.pkl", "wb") as file:
+    with open(
+        "./AdjointMatchingNN/Data/mixed_nu/val/" + str(args.NU)[:8] + "-nu.pkl", "wb"
+    ) as file:
         pickle.dump([np.array(sol), np.array(grad), args.NU], file)
     return
 

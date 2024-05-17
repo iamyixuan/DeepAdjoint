@@ -194,7 +194,6 @@ class PhysicsInformedNN:
 
 
 if __name__ == "__main__":
-
     nu = 0.01 / np.pi  # constant in the diff. equation
     N_u = 100  # number of data points in the boundaries
     N_f = 10000  # number of collocation points

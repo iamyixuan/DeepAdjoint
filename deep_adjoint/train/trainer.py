@@ -55,22 +55,19 @@ class BaseTrainer(ABC):
 
         logging.basicConfig(
             level=logging.INFO,
-            filename=f"./experiment/{model_type}-{data_name}-{loss_name}/log.txt",
+            filename=f"{self.exp_path}/log.txt",
             filemode="w",
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
         self.logger = logging.getLogger(__name__)
 
         if int(os.environ["TRAIN"]) == 1:
-            self.net = DDP(
-                net, device_ids=[self.gpu_id], find_unused_parameters=True
-            )
+            self.net = DDP(net, device_ids=[self.gpu_id], find_unused_parameters=True)
 
     @abstractmethod
     def train(self):
         pass
 
-    @abstractmethod
     def predict(self):
         pass
 
@@ -81,9 +78,9 @@ class TrainerSOMA(BaseTrainer):
     """
 
     def __init__(
-        self, net, optimizer_name, loss_name, gpu_id, dual_train=False
+        self, net, optimizer_name, loss_name, gpu_id, dual_train=False, **kwargs
     ):
-        super().__init__(net, optimizer_name, loss_name, gpu_id)
+        super().__init__(net, optimizer_name, loss_name, gpu_id, **kwargs)
         self.net = net
         if optimizer_name == "Adam":
             self.optimizer = torch.optim.Adam
@@ -99,9 +96,7 @@ class TrainerSOMA(BaseTrainer):
         self.net = net.to(gpu_id)
 
         if int(os.environ["TRAIN"]) == 1:
-            self.net = DDP(
-                net, device_ids=[self.gpu_id], find_unused_parameters=True
-            )
+            self.net = DDP(net, device_ids=[self.gpu_id], find_unused_parameters=True)
         self.dual_train = dual_train
 
     def train(
@@ -136,31 +131,31 @@ class TrainerSOMA(BaseTrainer):
             train_loader = DataLoader(
                 train, batch_size=batch_size, sampler=DistributedSampler(train)
             )
-            val_loader = DataLoader(
-                val, batch_size=10, sampler=DistributedSampler(val)
-            )
+            val_loader = DataLoader(val, batch_size=10, sampler=DistributedSampler(val))
         else:
             train_loader = DataLoader(train, batch_size=batch_size)
             val_loader = DataLoader(val, batch_size=10)
 
-        for val in val_loader:
+        for val_data in val_loader:
             if self.dual_train:
-                x_val, y_val = val
+                x_val, y_val = val_data
                 y_val, adj_val = y_val
             else:
-                x_val, y_val = val
+                x_val, y_val = val_data
 
             x_val = x_val.to(self.gpu_id)
             y_val = y_val.to(self.gpu_id)
             break
 
         print("Starts training...")
+        print(
+            f"Training set size: {train.__len__()}, validation set size: {val.__len__()}"
+        )
         best_val = np.inf
-        for ep in range(epochs):
+        for ep in tqdm(range(epochs)):
             running_loss = []
             running_metrics = []
             for x_train, y_train in train_loader:
-
                 x_train = x_train.to(self.gpu_id)
                 y_train = y_train.to(self.gpu_id)
 
@@ -220,31 +215,6 @@ class TrainerSOMA(BaseTrainer):
             return y_true, y_pred, gm
 
 
-def predict(net, gpu_id, test_data, checkpoint=None):
-    test_loader = DataLoader(test_data, batch_size=12)
-
-    y_true = []
-    y_pred = []
-    gm = []
-    net.eval()
-    net.to(gpu_id)
-    if checkpoint is not None:
-        net.load_state_dict(torch.load(checkpoint))
-    for x, y in tqdm(test_loader):
-        x = x.to(gpu_id)
-        y = y.to(gpu_id)
-        with torch.no_grad():
-            pred = net(x)
-            y_true.append(y.detach().cpu().numpy())
-            y_pred.append(pred.detach().cpu().numpy())
-            gm.append(x.detach().cpu().numpy())
-
-    # y_true = np.concatenate(y_true)
-    # y_pred = np.concatenate(y_pred)
-    # gm = np.asarray(gm)
-    return y_true, y_pred, gm
-
-
 def pred_rollout(net, gpu_id, test_data, checkpoint=None):
     MAX_STEPS = 29
     ROLLOUT_STEPS = 29  # needs to be less than or equal to the max steps
@@ -271,9 +241,7 @@ def pred_rollout(net, gpu_id, test_data, checkpoint=None):
                     temp_yt.append(y[0:1])
                 else:
                     pred = net(temp_yp[-1])
-                    pred = torch.cat(
-                        [pred, x[t : t + 1, PARAM_IDX, ...]], axis=1
-                    )
+                    pred = torch.cat([pred, x[t : t + 1, PARAM_IDX, ...]], axis=1)
                     temp_yp.append(pred)
                     temp_yt.append(y[t : t + 1])
         y_pred.append([y_p.detach().cpu().numpy() for y_p in temp_yp])

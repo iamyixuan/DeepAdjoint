@@ -7,8 +7,7 @@ from torch.distributed import init_process_group
 
 from deep_adjoint.model.FNOs import FNO3d
 from deep_adjoint.model.ForwardSurrogate import FNN, OneStepSolve3D
-from deep_adjoint.train.trainer import (TrainerSOMA, destroy_process_group,
-                                        pred_rollout, predict)
+from deep_adjoint.train.trainer import TrainerSOMA, destroy_process_group, pred_rollout
 from deep_adjoint.utils.data import SOMA_PCA_Data, SOMAdata
 from pytorch3dunet.unet3d.model import UNet3D
 
@@ -53,17 +52,17 @@ def run(args):
         if args.data == "GM":
             data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset3.hdf5"
         elif args.data == "REDI":
-            data_path = (
-                "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-redi-2.hdf5"
-            )
+            data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-redi-2.hdf5"
         elif args.data == "CVMIX":
-            data_path = (
-                "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-cvmix-2.hdf5"
-            )
+            data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-cvmix-2.hdf5"
         elif args.data == "BTTMDRAG":
-            data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-impliciBottomDrag.hdf5"
+            data_path = (
+                "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-impliciBottomDrag.hdf5"
+            )
         elif args.data == "GM_D_AVG":
-            data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM-dayAvg-2.hdf5"
+            data_path = (
+                "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM-dayAvg-2.hdf5"
+            )
         else:
             raise TypeError("Dataset not recognized!")
 
@@ -93,13 +92,19 @@ def run(args):
             projection_channels=32,
             scaler=True,
             train_data_stats=(train_set.mean, train_set.std),
+            gpu_id=args.gpu,
             mask=train_set.mask,
         )
     else:
         raise TypeError("Specify a network type!")
 
     trainer = TrainerSOMA(
-        net=net, optimizer_name="Adam", loss_name="MSE", gpu_id=args.gpu
+        net=net,
+        optimizer_name="Adam",
+        loss_name="MSE",
+        gpu_id=args.gpu,
+        model_type=args.net_type,
+        data_name=args.data,
     )
 
     if args.train == "True":
@@ -109,7 +114,6 @@ def run(args):
             epochs=args.epochs,
             batch_size=args.batch_size,
             learning_rate=args.lr,
-            model_name=args.model_name + args.data,
             mask=None,
             save_freq=args.save_freq,
             load_model=args.load_model,
@@ -119,7 +123,7 @@ def run(args):
         destroy_process_group()
 
     elif args.train == "False":
-        true, pred, param = predict(
+        true, pred, param = trainer.predict(
             net=net, test_data=test_set, gpu_id=0, checkpoint=args.model_path
         )
         with open(
@@ -145,7 +149,6 @@ def run(args):
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("-hidden", default=2, type=int)
     parser.add_argument("-num_res_block", default=2, type=int)

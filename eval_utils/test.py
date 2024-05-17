@@ -31,6 +31,7 @@ if __name__ == "__main__":
     #               learning_rate=0.01)
 
     import numpy as np
+
     # data = np.zeros(((1, 15, 185, 309, 60)))
     # data = torch.from_numpy(data).float()
 
@@ -38,11 +39,14 @@ if __name__ == "__main__":
     # a = net(data)
     # print(a.shape)
 
-    ds = SOMAdata(path='/pscratch/sd/y/yixuans/datatset/SOMA/varyGM/thedataset.hdf5', mode='train', device=torch.device('cpu'))
+    ds = SOMAdata(
+        path="/pscratch/sd/y/yixuans/datatset/SOMA/varyGM/thedataset.hdf5",
+        mode="train",
+        device=torch.device("cpu"),
+    )
     print(ds.__len__())
     dl = DataLoader(ds, batch_size=36)
     for x, y in dl:
         print(np.isnan(x.cpu().numpy()).any())
         print(np.isnan(y.cpu().numpy().any()))
         print(x.max())
-        

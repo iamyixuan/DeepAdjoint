@@ -27,22 +27,20 @@ class FNO3d(nn.Module):
             projection_channels=projection_channels,
         )
 
-        if (
-            kwargs["scaler"] is not None
-            and kwargs["train_data_stats"] is not None
-        ):
+        if kwargs["scaler"] is not None and kwargs["train_data_stats"] is not None:
             train_data_mean, train_data_std = kwargs["train_data_stats"]
             self.scaler = ChannelStandardScaler(
                 mask=kwargs["mask"],
                 mean=train_data_mean,
                 std=train_data_std,
+                gpu_id=kwargs["gpu_id"],
             )
 
     def forward(self, x):
-        if self.scaler_x:
-            x = self.scaler_x.transform(x)
+        if self.scaler:
+            x = self.scaler.transform(x)
             x = self.fno(x)
-            x = self.scaler_y.inverse_transform(x)
+            x = self.scaler.inverse_transform(x)
         else:
             x = self.fno(x)
         return x

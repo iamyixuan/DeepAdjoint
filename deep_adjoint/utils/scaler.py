@@ -4,9 +4,11 @@ import torch
 
 class ChannelStandardScaler:
     def __init__(self, **kwargs) -> None:
+        self.kwargs = kwargs
         if kwargs.get("mean") is not None and kwargs.get("std") is not None:
             self.m_ = kwargs.get("mean")
             self.std_ = kwargs.get("std")
+
         elif kwargs.get("data") is not None:
             self.init(data, **kwargs)
         else:
@@ -32,8 +34,8 @@ class ChannelStandardScaler:
 
     def get_stats(self):
         self.std_[self.std_ == 0] = 1
-        self.m_ = torch.from_numpy(self.m_).float()
-        self.std_ = torch.from_numpy(self.std_).float()
+        self.m_ = torch.from_numpy(self.m_).float().to(self.kwargs["gpu_id"])
+        self.std_ = torch.from_numpy(self.std_).float().to(self.kwargs["gpu_id"])
 
     def transform(self, x):
         x = (x - self.m_) / self.std_
@@ -41,7 +43,7 @@ class ChannelStandardScaler:
         return x
 
     def inverse_transform(self, x):
-        x = x * self.std_ + self.m_
+        x = x * self.std_[:, :-1, ...] + self.m_[:, :-1, ...]
         x[torch.isnan(x)] = 0
         return x
 

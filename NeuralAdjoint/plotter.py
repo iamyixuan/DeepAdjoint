@@ -27,11 +27,25 @@ class Plotter:
         d_max = np.max(x_true)
         x_bar = x_bar[..., 1:, :-1]
 
-        for i in range(len(x_bar)//10):
-            fig, ax = plt.subplots(2, 1, figsize=(10,8))
-            ax[0].imshow(x_bar[i*10].T, vmin=d_min, vmax=d_max, origin='lower', extent=[0, 1, -1 , 1], aspect=0.25)
+        for i in range(len(x_bar) // 10):
+            fig, ax = plt.subplots(2, 1, figsize=(10, 8))
+            ax[0].imshow(
+                x_bar[i * 10].T,
+                vmin=d_min,
+                vmax=d_max,
+                origin="lower",
+                extent=[0, 1, -1, 1],
+                aspect=0.25,
+            )
             # ax[0].set_title(r'Reconstructed $\nu={:.5f}$'.format(np.mean(x_bar[i*10][1:, -1])))
-            im=ax[1].imshow(x_true.T, vmin=d_min, vmax=d_max, origin='lower', extent=[0, 1, -1 , 1], aspect=0.25)
+            im = ax[1].imshow(
+                x_true.T,
+                vmin=d_min,
+                vmax=d_max,
+                origin="lower",
+                extent=[0, 1, -1, 1],
+                aspect=0.25,
+            )
             # ax[1].set_title(r'True $\nu$=0.005694')
             for a in ax:
                 a.set_xlabel(r"$t$")
@@ -43,7 +57,9 @@ class Plotter:
             plt.subplots_adjust(bottom=0.1, right=0.78, top=0.9)
             cax = plt.axes([0.83, 0.1, 0.03, 0.8])
             fig.colorbar(im, cax=cax)
-            fig.savefig('./frames/frame-' + str(i) + '.pdf', format='pdf', bbox_inches='tight')
+            fig.savefig(
+                "./frames/frame-" + str(i) + ".pdf", format="pdf", bbox_inches="tight"
+            )
             plt.close()
 
         # frames = []
