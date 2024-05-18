@@ -178,6 +178,9 @@ class TrainerSOMA(BaseTrainer):
                     val_loss = self.ls_fn(y_val, val_out, mask=mask)
                     # val_metrics = get_metrics(y_val.detach().cpu().numpy(), val_out.detach().cpu().numpy())
 
+            self.logger.info(
+                f"Epoch: {ep + 1}, Train Loss: {np.mean(running_loss)}, Val Loss: {val_loss.item()}"
+            )
             if self.gpu_id == 0 and val_loss.item() < best_val:
                 best_val = val_loss.item()
                 torch.save(
@@ -185,34 +188,24 @@ class TrainerSOMA(BaseTrainer):
                     f"{self.exp_path}/best_model_state.pt",
                 )
 
-            # if self.gpu_id == 0 and ep % save_freq == 0:
-            #     torch.save(
-            #         self.net.module.state_dict(),
-            #         f"./checkpoints/{self.now}_{model_name}/model_saved_ep_{ep}",
-            #     )
-
-            self.logger.info(
-                f"Epoch: {ep + 1}, Train Loss: {np.mean(running_loss)}, Val Loss: {val_loss.item()}"
-            )
-
-        def predict(self, test_data, checkpoint=None):
-            test_loader = DataLoader(test_data, batch_size=12)
-            y_true = []
-            y_pred = []
-            gm = []
-            self.net.eval()
-            self.net.to(self.gpu_id)
-            if checkpoint is not None:
-                self.net.load_state_dict(torch.load(checkpoint))
-            for x, y in tqdm(test_loader):
-                x = x.to(self.gpu_id)
-                y = y.to(self.gpu_id)
-                with torch.no_grad():
-                    pred = self.net(x)
-                    y_true.append(y.detach().cpu().numpy())
-                    y_pred.append(pred.detach().cpu().numpy())
-                    gm.append(x.detach().cpu().numpy())
-            return y_true, y_pred, gm
+    def predict(self, test_data, checkpoint=None):
+        test_loader = DataLoader(test_data, batch_size=12)
+        y_true = []
+        y_pred = []
+        gm = []
+        self.net.eval()
+        self.net.to(self.gpu_id)
+        if checkpoint is not None:
+            self.net.load_state_dict(torch.load(checkpoint))
+        for x, y in tqdm(test_loader):
+            x = x.to(self.gpu_id)
+            y = y.to(self.gpu_id)
+            with torch.no_grad():
+                pred = self.net(x)
+                y_true.append(y.detach().cpu().numpy())
+                y_pred.append(pred.detach().cpu().numpy())
+                gm.append(x.detach().cpu().numpy())
+        return y_true, y_pred, gm
 
 
 def pred_rollout(net, gpu_id, test_data, checkpoint=None):

@@ -68,7 +68,7 @@ def run(args):
 
         train_set = SOMAdata(path=data_path, mode="train")
         val_set = SOMAdata(path=data_path, mode="val")
-        # test_set = SOMAdata(path=data_path, mode="test")
+        test_set = SOMAdata(path=data_path, mode="test")
 
     if args.net_type == "ResNet":
         net = OneStepSolve3D(
@@ -124,10 +124,15 @@ def run(args):
 
     elif args.train == "False":
         true, pred, param = trainer.predict(
-            net=net, test_data=test_set, gpu_id=0, checkpoint=args.model_path
+           test_data=test_set, checkpoint=args.model_path
         )
+        save_path = f"/pscratch/sd/y/yixuans/{trainer.exp_path}"
+        
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
         with open(
-            f"{trainer.exp_path}/test-predictions.pkl",
+            f"{save_path}/test-predictions.pkl",
             "wb",
         ) as f:
             true_pred = {"true": true, "pred": pred, "param": param}
