@@ -1,20 +1,22 @@
-import numpy as np
-import pickle
-import matplotlib.pyplot as plt
-from tqdm import tqdm
+import argparse
 import os
+import pickle
+
 import h5py
+import matplotlib.pyplot as plt
+import numpy as np
+from tqdm import tqdm
 
 # import metrics
-from deep_adjoint.utils.metrics import r2, NRMSE, anomalyCorrelationCoef
+from deep_adjoint.utils.metrics import NRMSE, anomalyCorrelationCoef, r2
 from deep_adjoint.utils.scaler import DataScaler
 
 
 # plot utilies
 def rescale(t, p, idx):
-    data = h5py.File("/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM.hdf5", "r")[
-        "forward_0"
-    ][..., [3, 6, 10, 14, 15]]
+    data = h5py.File(
+        "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM.hdf5", "r"
+    )["forward_0"][..., [3, 6, 10, 14, 15]]
     mask = np.logical_or(data > 1e16, data < -1e16)
     data[mask] = np.nan
 
@@ -38,7 +40,7 @@ def rescale_avg(x):
     return scaler.inverse_transform(x)
 
 
-def plot_field(true, pred, cbarlabel, idx):
+def plot_field(true, pred, var_names, idx):
     """field: shape [x, y]"""
     plt.rcParams["mathtext.fontset"] = "stix"
     plt.rcParams["font.family"] = "STIXGeneral"
@@ -97,14 +99,17 @@ def plot_field(true, pred, cbarlabel, idx):
         # cb.ax.tick_params(labelsize=20)
 
     cbar_ax = fig.add_axes(
-        [0.9, pos2.bounds[1], 0.05, pos1.bounds[1] + pos1.bounds[-1] - pos2.bounds[1]]
+        [
+            0.9,
+            pos2.bounds[1],
+            0.05,
+            pos1.bounds[1] + pos1.bounds[-1] - pos2.bounds[1],
+        ]
     )
     cbar_ax2 = fig.add_axes([0.9, pos3.bounds[1], 0.05, pos3.bounds[3]])
     cbar = fig.colorbar(im, cax=cbar_ax, orientation="vertical")
     cbar2 = fig.colorbar(im2, cax=cbar_ax2, orientation="vertical")
-    fig.suptitle(f"{cbarlabel}", fontsize=20, y=0.91)
-    # cbar.set_label(f'{cbarlabel}', fontsize=16)
-    # plt.tight_layout()
+    fig.suptitle(f"{var_names[idx]}", fontsize=20, y=0.91)
     return fig
 
 
@@ -149,83 +154,82 @@ def plot_trend(mean, se, ylabel, min, max, var_idx, m_names):
     return fig
 
 
-# read predictions
-if __name__ == "__main__":
-    ROLLOUT = 0
-    PLOT = 0
-    CAL_SCORE = 1
-    PLOT_SINGLE = 0
-    DATA = "GM_D_AVG_MSE_ACC"
-    NET = "FNO"
-
-    from datetime import datetime
-
-    cur_time = datetime.now().strftime("%Y%m%d-%H")
-    print(cur_time)
+def main(args):
+    # read predictions
+    data_path = f"{args.data_path}/test-predictions.pkl"
+    with open("/pscratch/sd/y/yixuans/" + data_path, "rb") as f:
+        data = pickle.load(f)
 
     with open("./tmp/SOMA_mask.pkl", "rb") as f:
         mask = pickle.load(f)
-    mask = np.logical_or(mask["mask1"], mask["mask2"])[0, 0, :, :, 0]
+        mask = np.logical_or(mask["mask1"], mask["mask2"])
+    if args.cal_score == "True":
 
-    var_names = [
-        "Salinity",
-        "Temperature",
-        "Layer Thickness",
-        "Meridional Velocity",
-        "Zonal Velocity",
-    ]
-    # var_names = [ 'Layer Thickness', 'Salinity', 'Temperature',  'Meridional Velocity', 'Zonal Velocity']
-    with open(
-        f"/pscratch/sd/y/yixuans/2024-02-28-12_FNO-GM_D_AVG-predictions.pkl", "rb"
-    ) as f:
-        data = pickle.load(f)
+        true = np.concatenate(data["true"])
+        pred = np.concatenate(data["pred"])
+        true = np.transpose(true, axes=(0, 2, 3, 4, 1))
+        pred = np.transpose(pred, axes=(0, 2, 3, 4, 1))
+        true = rescale_avg(true)
+        pred = rescale_avg(pred)
+        mask_b = mask[0:1, 0:1, :, :, 0:1]
+        mask_b = np.broadcast_to(mask_b, true.shape)
 
-    true = data["true"][1]
-    pred = data["pred"][1]
+        true[mask_b] = np.nan
+        pred[mask_b] = np.nan
 
-    print(true.shape, pred.shape)
+        metric_true = true  # np.nan_to_num(true)
+        metric_pred = pred  # np.nan_to_num(pred)
 
-    varID = 1
+        r2_scores = apply_to_channel(metric_true, metric_pred, r2)
+        sMAPE_scores = apply_to_channel(metric_true, metric_pred, NRMSE)
+        rMSE_scores = apply_to_channel(
+            metric_true, metric_pred, anomalyCorrelationCoef
+        )
 
-    true = np.transpose(true, axes=(0, 2, 3, 4, 1))
-    pred = np.transpose(pred, axes=(0, 2, 3, 4, 1))
+        print(r"$R^2$ scores are", format_vals(r2_scores))
+        print(r"$NRMSE$ scores are", format_vals(sMAPE_scores))
+        print(r"$ACC$ scores are", format_vals(rMSE_scores))
 
-    # true = true[15]
-    # pred = pred[15]
-    # mask = np.broadcast_to(mask[np.newaxis,..., np.newaxis], true.shape)
-    # print(mask.shape, true.shape)
-    # true[mask] = np.nan
-    # pred[mask] = np.nan
+    if args.plot_predictions == "True":
+        var_names = [
+            "Salinity",
+            "Temperature",
+            "Layer Thickness",
+            "Meridional Velocity",
+            "Zonal Velocity",
+        ]
+        true = data["true"][1]
+        pred = data["pred"][1]
 
-    true = rescale_avg(true)
-    pred = rescale_avg(pred)
+        true = np.transpose(true, axes=(0, 2, 3, 4, 1))
+        pred = np.transpose(pred, axes=(0, 2, 3, 4, 1))
 
-    t = true[2, 10, ..., varID]
-    p = pred[2, 10, ..., varID]
+        t = true[2, 10, ..., args.var_id]
+        p = pred[2, 10, ..., args.var_id]
 
-    t[mask] = np.nan
-    p[mask] = np.nan
-    print(t.shape, p.shape)
+        mask = mask[0, 0, :, :, 0]
+        t[mask] = np.nan
+        p[mask] = np.nan
 
-    # fig = plot_field(t, p, var_names[varID], varID)
-    # fig.savefig(f'./eval_plots/{cur_time}-{DATA}-truePred{var_names[varID]}.pdf', format='pdf', bbox_inches='tight')
+        fig = plot_field(t, p, var_names, idx=args.var_id)
+        fig.savefig(
+            f"./{args.data}/{var_names[args.var_id]}-true-pred.pdf",
+            format="pdf",
+            bbox_inches="tight",
+        )
 
-    if ROLLOUT == 1:
-        # with open(f'/pscratch/sd/y/yixuans/FNO-{DATA}-rollout.pkl', 'rb') as f:
-        #     data = pickle.load(f)
-
+    if args.rollout == "True":
         with open(
-            f"/pscratch/sd/y/yixuans/2024-02-28-12_FNO-GM_D_AVG-rollout.pkl", "rb"
+            f"/pscratch/sd/y/yixuans/2024-02-28-12_FNO-GM_D_AVG-rollout.pkl",
+            "rb",
         ) as f:
             data = pickle.load(f)
 
-        with open("./tmp/SOMA_mask.pkl", "rb") as f:
-            mask = pickle.load(f)
-            mask = np.logical_or(mask["mask1"], mask["mask2"])
-
         DIR_NAME = f"{NET}-{DATA}"
-        if not os.path.exists(f"./eval_plots/{DIR_NAME}/"):
-            os.makedirs(f"./eval_plots/{DIR_NAME}/")
+        if not os.path.exists(
+            f"./experiments/{args.data_path}/rollout-plots/"
+        ):
+            os.makedirs(f"./experiments/{args.data_path}/rollout-plots/")
         overall_scores = []  # expected shape [10, 2, 5, 29] r2 and mape
         for k in tqdm(range(len(data["true"]))):
             true = data["true"][k].squeeze()
@@ -235,9 +239,6 @@ if __name__ == "__main__":
             pred = np.transpose(pred, axes=(0, 2, 3, 4, 1))[
                 ..., :-1
             ]  # enable this while rollout
-
-            true = rescale_avg(true)
-            pred = rescale_avg(pred)
 
             mask_b = mask[0:1, 0:1, :, :, 0:1]
             mask_b = np.broadcast_to(mask_b, true.shape)
@@ -256,40 +257,25 @@ if __name__ == "__main__":
                 "Zonal Velocity",
             ]
 
-            if PLOT_SINGLE == 1:
-                for v in range(len(var_names)):
-                    fig = plot_field(
-                        true[7, 10, ..., v], pred[7, 10, ..., v], var_names[v], v
-                    )
-                    fig.savefig(
-                        f"./eval_plots/{DIR_NAME}/var{var_names[v]}-onestep.png",
-                        format="png",
-                        bbox_inches="tight",
-                        dpi=300,
-                        transparent=True,
-                    )
-                break
-
             r2_timestep = []
             NCC_timestep = []
             NRMSE_timestep = []
             for i in range(true.shape[-1]):
                 for t in range(29):
-                    # if t != 15:
-                    #     pass
-                    # else:
                     cur_true = true[t, ..., i]
                     cur_pred = pred[t, ..., i]
                     r2_timestep.append(r2(cur_true, cur_pred))
-                    NCC_timestep.append(anomalyCorrelationCoef(cur_true, cur_pred))
+                    NCC_timestep.append(
+                        anomalyCorrelationCoef(cur_true, cur_pred)
+                    )
                     NRMSE_timestep.append(NRMSE(cur_true, cur_pred))
 
                     fig_true = plot_field(
-                        true[t, 10, ..., i], pred[t, 10, ..., i], var_names[i], i
+                        true[t, 10, ..., i],
+                        pred[t, 10, ..., i],
+                        var_names[i],
+                        i,
                     )
-                    # print(NCC_timestep[-1])
-
-                    # fig_pred = plot_field(pred[15,10, ..., i], vmin, vmax)
 
                     fig_true.savefig(
                         f"./eval_plots/{DIR_NAME}/var{var_names[i]}-t{t}.pdf",
@@ -321,60 +307,16 @@ if __name__ == "__main__":
         overall_scores = np.array(overall_scores)
 
         np.save(
-            f"./eval_plots/{DIR_NAME}/overall_scores-{DATA}-rollout.npy", overall_scores
+            f"./eval_plots/{DIR_NAME}/overall_scores-{DATA}-rollout.npy",
+            overall_scores,
         )
-    if CAL_SCORE == 1:
-        # with open(f'/pscratch/sd/y/yixuans/FNO-{DATA}-predictions.pkl', 'rb') as f:
-        #     data = pickle.load(f)
 
-        with open(f"/pscratch/sd/y/yixuans/FNO-GM_D_AVG-predictions.pkl", "rb") as f:
-            data = pickle.load(f)
+    if args.plot_trend == "True":
 
-        with open("./tmp/SOMA_mask.pkl", "rb") as f:
-            mask = pickle.load(f)
-            mask = np.logical_or(mask["mask1"], mask["mask2"])
-
-        print(mask.shape)
-        true = np.concatenate(data["true"])
-        pred = np.concatenate(data["pred"])
-        true = np.transpose(true, axes=(0, 2, 3, 4, 1))
-        pred = np.transpose(pred, axes=(0, 2, 3, 4, 1))
-        true = rescale_avg(true)
-        pred = rescale_avg(pred)
-        print(true.shape, pred.shape)
-        mask_b = mask[0:1, 0:1, :, :, 0:1]
-        mask_b = np.broadcast_to(mask_b, true.shape)
-
-        true[mask_b] = np.nan
-        pred[mask_b] = np.nan
-
-        metric_true = true  # np.nan_to_num(true)
-        metric_pred = pred  # np.nan_to_num(pred)
-
-        r2_scores = apply_to_channel(metric_true, metric_pred, r2)
-        sMAPE_scores = apply_to_channel(metric_true, metric_pred, NRMSE)
-        rMSE_scores = apply_to_channel(metric_true, metric_pred, anomalyCorrelationCoef)
-
-        print(r"$R^2$ scores are", format_vals(r2_scores))
-        print(r"$NRMSE$ scores are", format_vals(sMAPE_scores))
-        print(r"$ACC$ scores are", format_vals(rMSE_scores))
-
-    if PLOT == 1:
-        # data_Res = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/ResNet-5var/overall_scores-5var-rollout.npy')
-        # data_Unet = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/Unet-5var/overall_scores-5var-rollout.npy')
         data_FNO = np.load(
             "/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-GM_D_AVG_MSE_ACC/overall_scores-GM_D_AVG_MSE_ACC-rollout.npy"
         )
-        # data = np.array([data_Res, data_Unet, data_FNO])
-
-        # data_REDI = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-REDI/overall_scores-REDI-rollout.npy')
-        # data_CVMIX = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-CVMIX/overall_scores-CVMIX-rollout.npy')
-        # data_bottomDrag = np.load('/global/homes/y/yixuans/DeepAdjoint/eval_plots/FNO-BTTMDRAG/overall_scores-BTTMDRAG-rollout.npy')
-        # print(data_REDI.shape, data_CVMIX.shape, data_bottomDrag.shape)
-        # data = [data_FNO, data_REDI, data_CVMIX, data_bottomDrag]
         data = [data_FNO]
-        # print(data[2][1, 1,...])
-        # var_names = ['LayerThickness', 'Salinity', 'Temperature', 'ZonalVelocity', 'MeridionalVelociy']
         var_names = [
             "Salinity",
             "Temperature",
@@ -384,14 +326,17 @@ if __name__ == "__main__":
         ]
         from scipy.stats import sem
 
-        # mu = np.mean(data, axis=1)
-        # se = sem(data, axis=1)
         mu = np.array([np.mean(d, axis=0) for d in data])
         se = np.array([sem(d, axis=0) for d in data])
         print(mu.shape, se.shape)
 
         var_idx = 1
-        m_names = [r"$\kappa_{GM}$", r"$\kappa_{redi}$", r"$\kappa_{bg}$", r"$C_D$"]
+        m_names = [
+            r"$\kappa_{GM}$",
+            r"$\kappa_{redi}$",
+            r"$\kappa_{bg}$",
+            r"$C_D$",
+        ]
 
         fig1 = plot_trend(
             mu[:, 1],
@@ -421,3 +366,22 @@ if __name__ == "__main__":
             format="pdf",
             bbox_inches="tight",
         )
+
+
+# read predictions
+if __name__ == "__main__":
+    ROLLOUT = 0
+    PLOT = 0
+    CAL_SCORE = 1
+    PLOT_SINGLE = 0
+    DATA = "GM_D_AVG_MSE_ACC"
+    NET = "FNO"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rollout", type=str, default="False")
+    parser.add_argument("--plot", type=str, default="False")
+    parser.add_argument("--cal_score", type=str, default="True")
+    parser.add_argument(
+        "--data_path", type=str, default="experiments/GM_D_AVG_MSE_ACC"
+    )
+    args = parser.parse_args()
