@@ -379,9 +379,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--rollout", type=str, default="False")
-    parser.add_argument("--plot", type=str, default="False")
     parser.add_argument("--cal_score", type=str, default="True")
     parser.add_argument(
         "--data_path", type=str, default="experiments/GM_D_AVG_MSE_ACC"
     )
+    parser.add_argument("--plot_predictions", type=str, default="False")
+    parser.add_argument("--plot_trend", type=str, default="False")
     args = parser.parse_args()
