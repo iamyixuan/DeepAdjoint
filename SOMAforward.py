@@ -116,8 +116,8 @@ def run(args):
             learning_rate=args.lr,
             mask=None,
             save_freq=args.save_freq,
-            load_model=args.load_model,
             model_path=args.model_path,
+            load_model=True,
         )
 
         destroy_process_group()

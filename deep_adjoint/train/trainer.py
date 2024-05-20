@@ -56,7 +56,7 @@ class BaseTrainer(ABC):
         logging.basicConfig(
             level=logging.INFO,
             filename=f"{self.exp_path}/log.txt",
-            filemode="w",
+            filemode="a",
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
         self.logger = logging.getLogger(__name__)

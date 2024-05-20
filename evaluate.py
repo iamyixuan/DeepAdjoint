@@ -386,3 +386,5 @@ if __name__ == "__main__":
     parser.add_argument("--plot_predictions", type=str, default="False")
     parser.add_argument("--plot_trend", type=str, default="False")
     args = parser.parse_args()
+
+    main(args)
