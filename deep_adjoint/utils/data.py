@@ -76,12 +76,18 @@ class SOMAdata(BaseData):
         Meridional Velocity: [3.82e-8, 0.906503]
         Zonal Velocity: [6.95e-9, 1.640676]
         """
-        data_min = np.array([34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9, 200])
-        data_max = np.array([34.24358, 18.84177, 13.05347, 0.906503, 1.640676, 2000])
+        data_min = np.array(
+            [34.01481, 5.144762, 4.539446, 3.82e-8, 6.95e-9, 200]
+        )
+        data_max = np.array(
+            [34.24358, 18.84177, 13.05347, 0.906503, 1.640676, 2000]
+        )
 
         self.scaler = DataScaler(data_min=data_min, data_max=data_max)
 
-        with open("/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl", "rb") as f:
+        with open(
+            "/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl", "rb"
+        ) as f:
             mask = pickle.load(f)
 
         self.mask1 = mask["mask1"]
@@ -92,7 +98,10 @@ class SOMAdata(BaseData):
     def init(self):
         self._split_data(test_size=0.1)
         self.num_time_series_per_key = (
-            self.data[self.keys_in_use[0]].shape[0] - self.hist_len - self.horizon + 1
+            self.data[self.keys_in_use[0]].shape[0]
+            - self.hist_len
+            - self.horizon
+            + 1
         )
         self.num_samples = self.num_time_series_per_key * len(self.keys_in_use)
 
@@ -108,7 +117,15 @@ class SOMAdata(BaseData):
 
         x, y = self.transform(x, y)
 
-        bc_mask = np.broadcast_to(self.mask[np.newaxis, np.newaxis, ...], x.shape)
+        if len(x.shape) == 5:
+            bc_mask = np.broadcast_to(
+                self.mask[np.newaxis, np.newaxis, np.newaxis, ...], x.shape
+            )
+        else:
+            bc_mask = np.broadcast_to(
+                self.mask[np.newaxis, np.newaxis, ...], x.shape
+            )
+
         x[bc_mask] = 0.0
         y[bc_mask[:-1, ...]] = 0.0
 
@@ -119,16 +136,13 @@ class SOMAdata(BaseData):
 
         This applies to a single data sample, ignoring the batch dim
         """
-        x = np.transpose(
-            x,
-            axes=[
-                3,
-                0,
-                1,
-                2,
-            ],
-        )
-        y = np.transpose(y, axes=[3, 0, 1, 2])
+        if len(x.shape) == 5:
+            # if the horizon is greater than 1
+            x = np.transpose(x, axes=[4, 0, 1, 2, 3])
+            y = np.transpose(y, axes=[4, 0, 1, 2, 3])
+        else:
+            x = np.transpose(x, axes=[3, 0, 1, 2])
+            y = np.transpose(y, axes=[3, 0, 1, 2])
         return x, y
 
     def _split_data(self, test_size=0.1):
@@ -148,13 +162,24 @@ class SOMAdata(BaseData):
                 self.mask[np.newaxis, ..., np.newaxis], data.shape
             )
             data[bc_mask] = np.nan
-            # at this point the channel is the last axis
-            self.mean = np.nanmean(data, axis=(0, 1, 2, 3), keepdims=True)
-            self.std = np.nanstd(data, axis=(0, 1, 2, 3), keepdims=True)
 
-            # move the channel axis to the second for data loading
-            self.mean = np.transpose(self.mean, axes=[0, 4, 1, 2, 3])
-            self.std = np.transpose(self.std, axes=[0, 4, 1, 2, 3])
+            # at this point the channel is the last axis
+            if len(data.shape) == 6:
+                # consider the horizon and batch dim
+                self.mean = np.nanmean(
+                    data, axis=(0, 1, 2, 3, 4), keepdims=True
+                )
+                self.std = np.nanstd(data, axis=(0, 1, 2, 3, 4), keepdims=True)
+
+                self.mean = np.transpose(self.mean, axes=[0, 5, 1, 2, 3, 4])
+                self.std = np.transpose(self.std, axes=[0, 5, 1, 2, 3, 4])
+            else:
+                self.mean = np.nanmean(data, axis=(0, 1, 2, 3), keepdims=True)
+                self.std = np.nanstd(data, axis=(0, 1, 2, 3), keepdims=True)
+
+                # move the channel axis to the second for data loading
+                self.mean = np.transpose(self.mean, axes=[0, 4, 1, 2, 3])
+                self.std = np.transpose(self.std, axes=[0, 4, 1, 2, 3])
             print("Done")
 
         elif self.mode == "val":
@@ -171,6 +196,8 @@ class SOMAdata(BaseData):
         data: np.array of shape (n, 60, 100, 100, 16)
 
         n is the number of time steps in a SINGLE forward simulation
+
+        The time dimension is the first axis
         """
 
         x = data[i : i + self.hist_len, ..., self.var_idx]
@@ -179,6 +206,12 @@ class SOMAdata(BaseData):
             ...,
             self.var_idx[:-1],
         ]
+
+        # check if the time dimension matches
+        if len(x.shape) < len(y.shape):
+            x = np.newaxis(x, axis=0)
+            x = np.repeat(x, self.horizon, axis=0)
+
         return x.squeeze(), y.squeeze()
 
 
@@ -196,11 +229,17 @@ class SOMA_PCA_Data(Dataset):
         )  # fit a minmax scaler using the training data
 
         if mode == "train":
-            self.data = data[train_idx][..., self.var_idx].reshape(len(train_idx), -1)
+            self.data = data[train_idx][..., self.var_idx].reshape(
+                len(train_idx), -1
+            )
         elif mode == "val":
-            self.data = data[val_idx][..., self.var_idx].reshape(len(val_idx), -1)
+            self.data = data[val_idx][..., self.var_idx].reshape(
+                len(val_idx), -1
+            )
         elif mode == "test":
-            self.data = data[test_idx][..., self.var_idx].reshape(len(test_idx), -1)
+            self.data = data[test_idx][..., self.var_idx].reshape(
+                len(test_idx), -1
+            )
         else:
             raise NameError(f"Mode name {mode} not found!")
 
