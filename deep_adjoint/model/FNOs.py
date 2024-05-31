@@ -1,6 +1,6 @@
 import torch.nn as nn
 from neuralop.models import TFNO, TFNO3d
-from modulus.models import FNO
+from modulus.models.fno import FNO
 
 from ..utils.scaler import ChannelStandardScaler
 
@@ -73,6 +73,7 @@ class FNO4d(nn.Module):
             ],
             in_channels=in_channels,
             out_channels=out_channels,
+            dimension=4,
         )
 
         if (

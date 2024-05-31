@@ -58,9 +58,9 @@ def run(args):
     else:
         raise TypeError("Dataset not recognized!")
 
-    train_set = SOMAdata(path=data_path, mode="train")
-    val_set = SOMAdata(path=data_path, mode="val")
-    test_set = SOMAdata(path=data_path, mode="test")
+    train_set = SOMAdata(path=data_path, horizon=5, mode="train")
+    val_set = SOMAdata(path=data_path, horizon=5, mode="val")
+    test_set = SOMAdata(path=data_path, horizon=5, mode="test")
 
     # ================= Load model =================
 
@@ -98,7 +98,7 @@ def run(args):
         optimizer_name="Adam",
         loss_name="MSE",
         gpu_id=args.gpu,
-        model_type=args.net_type,
+        model_type=args.model,
         data_name=args.data,
     )
 
@@ -112,7 +112,7 @@ def run(args):
             mask=None,
             save_freq=args.save_freq,
             model_path=args.model_path,
-            load_model=True,
+            load_model=False,
         )
 
         destroy_process_group()

@@ -213,7 +213,7 @@ def main(args):
 
         fig = plot_field(t, p, var_names, idx=args.var_id)
         fig.savefig(
-            f"./{args.data}/{var_names[args.var_id]}-true-pred.pdf",
+            f"./{args.data_path}/{var_names[args.var_id]}-true-pred.pdf",
             format="pdf",
             bbox_inches="tight",
         )
@@ -385,6 +385,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--plot_predictions", type=str, default="False")
     parser.add_argument("--plot_trend", type=str, default="False")
+    parser.add_argument("--var_id", type=int, default=0)
     args = parser.parse_args()
 
     main(args)

@@ -164,22 +164,12 @@ class SOMAdata(BaseData):
             data[bc_mask] = np.nan
 
             # at this point the channel is the last axis
-            if len(data.shape) == 6:
-                # consider the horizon and batch dim
-                self.mean = np.nanmean(
-                    data, axis=(0, 1, 2, 3, 4), keepdims=True
-                )
-                self.std = np.nanstd(data, axis=(0, 1, 2, 3, 4), keepdims=True)
+            self.mean = np.nanmean(data, axis=(0, 1, 2, 3), keepdims=True)
+            self.std = np.nanstd(data, axis=(0, 1, 2, 3), keepdims=True)
 
-                self.mean = np.transpose(self.mean, axes=[0, 5, 1, 2, 3, 4])
-                self.std = np.transpose(self.std, axes=[0, 5, 1, 2, 3, 4])
-            else:
-                self.mean = np.nanmean(data, axis=(0, 1, 2, 3), keepdims=True)
-                self.std = np.nanstd(data, axis=(0, 1, 2, 3), keepdims=True)
-
-                # move the channel axis to the second for data loading
-                self.mean = np.transpose(self.mean, axes=[0, 4, 1, 2, 3])
-                self.std = np.transpose(self.std, axes=[0, 4, 1, 2, 3])
+            # move the channel axis to the second for data loading
+            self.mean = np.transpose(self.mean, axes=[0, 4, 1, 2, 3])
+            self.std = np.transpose(self.std, axes=[0, 4, 1, 2, 3])
             print("Done")
 
         elif self.mode == "val":
@@ -208,8 +198,8 @@ class SOMAdata(BaseData):
         ]
 
         # check if the time dimension matches
-        if len(x.shape) < len(y.shape):
-            x = np.newaxis(x, axis=0)
+        if x.shape[0] < y.shape[0]:
+            x = x[np.newaxis, ...] 
             x = np.repeat(x, self.horizon, axis=0)
 
         return x.squeeze(), y.squeeze()
