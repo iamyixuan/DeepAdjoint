@@ -58,9 +58,9 @@ def run(args):
     else:
         raise TypeError("Dataset not recognized!")
 
-    train_set = SOMAdata(path=data_path, horizon=5, mode="train")
-    val_set = SOMAdata(path=data_path, horizon=5, mode="val")
-    test_set = SOMAdata(path=data_path, horizon=5, mode="test")
+    train_set = SOMAdata(path=data_path, horizon=5, var_idx=[8], mode="train")
+    val_set = SOMAdata(path=data_path, horizon=5, var_idx=[8], mode="val")
+    test_set = SOMAdata(path=data_path, horizon=5, var_idx=[8], mode="test")
 
     # ================= Load model =================
 
@@ -83,8 +83,8 @@ def run(args):
             n_modes_height=4,
             n_modes_width=4,
             n_modes_depth=4,
-            in_channels=6,
-            out_channels=5,
+            in_channels=2,
+            out_channels=1,
             hidden_channels=16,
             projection_channels=32,
             scaler=True,
@@ -98,7 +98,7 @@ def run(args):
         optimizer_name="Adam",
         loss_name="MSE",
         gpu_id=args.gpu,
-        model_type=args.model,
+        model=args.model,
         data_name=args.data,
     )
 
@@ -154,8 +154,7 @@ if __name__ == "__main__":
     parser.add_argument("-batch_size", default=8, type=int)
     parser.add_argument("-lr", default=0.001, type=float)
     parser.add_argument("-train", default="True", type=str)
-    parser.add_argument("-mask", default="True", type=str)
-    parser.add_argument("-model", type=str, default="3D")
+    parser.add_argument("-model", type=str, default="4D")
     parser.add_argument("-load_model", action="store_true")
     parser.add_argument("-model_path", type=str)
     parser.add_argument("-save_freq", type=int, default=100)

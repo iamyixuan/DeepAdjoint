@@ -53,6 +53,7 @@ class SOMAdata(BaseData):
         hist_len=1,
         horizon=1,
         transform=True,
+        var_idx=[7, 8, 11, 14, 15],
     ):
         """path: the hd5f file path, can be relative path
         mode: ['trian', 'val', 'test']
@@ -67,7 +68,7 @@ class SOMAdata(BaseData):
         self.horizon = horizon
 
         # var idx for the day avg dataset
-        self.var_idx = [7, 8, 11, 14, 15, -1]
+        self.var_idx = var_idx + [-1]
 
         """
         Layer thickness: [4.539446, 13.05347]
@@ -199,7 +200,7 @@ class SOMAdata(BaseData):
 
         # check if the time dimension matches
         if x.shape[0] < y.shape[0]:
-            x = x[np.newaxis, ...] 
+            x = x[np.newaxis, ...]
             x = np.repeat(x, self.horizon, axis=0)
 
         return x.squeeze(), y.squeeze()

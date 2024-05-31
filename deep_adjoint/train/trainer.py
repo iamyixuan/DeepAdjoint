@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import torch
-from torch.distributed import init_process_group, destroy_process_group
+from torch.distributed import init_process_group
 from torch.func import jacrev
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -44,12 +44,12 @@ class BaseTrainer(ABC):
         self.ls_fn = Losses(loss_name)()
 
         # set up logging
-        if kwargs.get("model_type") is not None:
-            model_type = kwargs.get("model_type")
+        if kwargs.get("model") is not None:
+            model_type = kwargs.get("model")
         if kwargs.get("data_name") is not None:
             data_name = kwargs.get("data_name")
 
-        self.exp_path = f"./experiments/{model_type}-{data_name}-{loss_name}/"
+        self.exp_path = f"./experiments/{model_type}-{data_name}-{loss_name}-{optimizer_name}/"
         if not os.path.exists(self.exp_path):
             os.makedirs(self.exp_path)
 
@@ -62,7 +62,9 @@ class BaseTrainer(ABC):
         self.logger = logging.getLogger(__name__)
 
         if int(os.environ["TRAIN"]) == 1:
-            self.net = DDP(net, device_ids=[self.gpu_id], find_unused_parameters=True)
+            self.net = DDP(
+                net, device_ids=[self.gpu_id], find_unused_parameters=True
+            )
 
     @abstractmethod
     def train(self):
@@ -78,7 +80,13 @@ class TrainerSOMA(BaseTrainer):
     """
 
     def __init__(
-        self, net, optimizer_name, loss_name, gpu_id, dual_train=False, **kwargs
+        self,
+        net,
+        optimizer_name,
+        loss_name,
+        gpu_id,
+        dual_train=False,
+        **kwargs,
     ):
         super().__init__(net, optimizer_name, loss_name, gpu_id, **kwargs)
         self.net = net
@@ -96,7 +104,9 @@ class TrainerSOMA(BaseTrainer):
         self.net = net.to(gpu_id)
 
         if int(os.environ["TRAIN"]) == 1:
-            self.net = DDP(net, device_ids=[self.gpu_id], find_unused_parameters=True)
+            self.net = DDP(
+                net, device_ids=[self.gpu_id], find_unused_parameters=True
+            )
         self.dual_train = dual_train
 
     def train(
@@ -131,7 +141,9 @@ class TrainerSOMA(BaseTrainer):
             train_loader = DataLoader(
                 train, batch_size=batch_size, sampler=DistributedSampler(train)
             )
-            val_loader = DataLoader(val, batch_size=10, sampler=DistributedSampler(val))
+            val_loader = DataLoader(
+                val, batch_size=10, sampler=DistributedSampler(val)
+            )
         else:
             train_loader = DataLoader(train, batch_size=batch_size)
             val_loader = DataLoader(val, batch_size=10)
@@ -154,7 +166,6 @@ class TrainerSOMA(BaseTrainer):
         best_val = np.inf
         for ep in tqdm(range(epochs)):
             running_loss = []
-            running_metrics = []
             for x_train, y_train in train_loader:
                 x_train = x_train.to(self.gpu_id)
                 y_train = y_train.to(self.gpu_id)
@@ -234,7 +245,9 @@ def pred_rollout(net, gpu_id, test_data, checkpoint=None):
                     temp_yt.append(y[0:1])
                 else:
                     pred = net(temp_yp[-1])
-                    pred = torch.cat([pred, x[t : t + 1, PARAM_IDX, ...]], axis=1)
+                    pred = torch.cat(
+                        [pred, x[t : t + 1, PARAM_IDX, ...]], axis=1
+                    )
                     temp_yp.append(pred)
                     temp_yt.append(y[t : t + 1])
         y_pred.append([y_p.detach().cpu().numpy() for y_p in temp_yp])
