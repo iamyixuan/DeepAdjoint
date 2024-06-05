@@ -81,7 +81,7 @@ class SOMAdata(Dataset):
 
         DIR = os.path.dirname(os.path.abspath(__file__))
         data_path = os.path.join(DIR, path)
-        self.data = h5py.File(data_path, "r")
+        self.data = h5py.File(path, "r")
         keys = list(self.data.keys())
 
         random.Random(0).shuffle(keys)

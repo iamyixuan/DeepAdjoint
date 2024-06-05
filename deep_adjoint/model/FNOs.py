@@ -73,6 +73,9 @@ class FNO4d(nn.Module):
             ],
             in_channels=in_channels,
             out_channels=out_channels,
+            latent_channels=hidden_channels,
+            num_fno_layers=2,
+            decoder_layer_size=projection_channels,
             dimension=4,
         )
 
@@ -86,6 +89,7 @@ class FNO4d(nn.Module):
                 mean=train_data_mean,
                 std=train_data_std,
                 gpu_id=kwargs["gpu_id"],
+                Four_D=True,
             )
 
     def forward(self, x):

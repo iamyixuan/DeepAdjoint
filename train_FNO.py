@@ -58,9 +58,9 @@ def run(args):
     else:
         raise TypeError("Dataset not recognized!")
 
-    train_set = SOMAdata(path=data_path, horizon=5, var_idx=[8], mode="train")
-    val_set = SOMAdata(path=data_path, horizon=5, var_idx=[8], mode="val")
-    test_set = SOMAdata(path=data_path, horizon=5, var_idx=[8], mode="test")
+    train_set = SOMAdata(path=data_path, horizon=3, var_idx=[8], mode="train")
+    val_set = SOMAdata(path=data_path, horizon=3, var_idx=[8], mode="val")
+    test_set = SOMAdata(path=data_path, horizon=3, var_idx=[8], mode="test")
 
     # ================= Load model =================
 
@@ -85,8 +85,8 @@ def run(args):
             n_modes_depth=4,
             in_channels=2,
             out_channels=1,
-            hidden_channels=16,
-            projection_channels=32,
+            hidden_channels=8,
+            projection_channels=8,
             scaler=True,
             train_data_stats=(train_set.mean, train_set.std),
             gpu_id=args.gpu,

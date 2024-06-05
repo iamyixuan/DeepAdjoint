@@ -17,6 +17,8 @@ __pycache__/
 tmp/
 saved/
 *.pkl
+*.out
+*.err
 eval_plots/
 neuraloperator/
 notebooks/

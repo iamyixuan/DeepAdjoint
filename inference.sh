@@ -12,23 +12,18 @@
 
 
 # conda activate deeplearning
-export WORLD_SIZE=40
-export MASTER_PORT=38172
-export TRAIN=1  
+export TRAIN=0  
 export LOSS=FNO
 
 ### get the first node name as master address - customized for vgg slurm
 ### e.g. master(gnodee[2-5],gnoded1) == gnodee2
 echo "NODELIST="${SLURM_NODELIST}
-master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 
 
-export MASTER_ADDR=$master_addr
-export LOSS=FNO
-srun python train_FNO.py -batch_size 1\
+python train_FNO.py -batch_size 1\
                       -epochs 5000\
                       -lr 0.001\
                       -model 4D\
                       -data GM_D_AVG\
-                      -train False
+                      -train False\
                       -model_path "./experiments/4D-GM_D_AVG-MSE-Adam/best_model_state.pt"

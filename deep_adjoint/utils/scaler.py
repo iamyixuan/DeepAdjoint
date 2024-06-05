@@ -15,6 +15,11 @@ class ChannelStandardScaler:
             raise ValueError("Either mean and std or data should be provided")
 
         self.get_stats()
+        
+        if kwargs.get('Four_D') is not None:
+            print('Using 4D')
+            self.m_ = self.m_[:, :,  None, ...]
+            self.std_ = self.std_[:, :, None, ...]
 
     def init(self, data, dim_to_reduce=(0, 2, 3, 4), **kwargs):
         if kwargs.get("mask") is not None:
@@ -38,9 +43,6 @@ class ChannelStandardScaler:
         self.std_ = torch.from_numpy(self.std_).float().to(self.kwargs["gpu_id"])
 
     def transform(self, x):
-        if len(x.shape) == 6:
-            self.m_ = self.m_[:, :,  None, ...]
-            self.std_ = self.std_[:, :, None, ...]
         x = (x - self.m_) / self.std_
         x[torch.isnan(x)] = 0
         return x

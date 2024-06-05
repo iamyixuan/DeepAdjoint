@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import torch
-from torch.distributed import init_process_group
+from torch.distributed import init_process_group, destroy_process_group
 from torch.func import jacrev
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader

@@ -184,7 +184,7 @@ class SOMAdata(BaseData):
 
     def get_time_series(self, data, i):
         """Get the time series data from the given data
-        data: np.array of shape (n, 60, 100, 100, 16)
+        data: np.array of shape (n, 60, 100, 100, var_len)
 
         n is the number of time steps in a SINGLE forward simulation
 
@@ -203,7 +203,8 @@ class SOMAdata(BaseData):
             x = x[np.newaxis, ...]
             x = np.repeat(x, self.horizon, axis=0)
 
-        return x.squeeze(), y.squeeze()
+
+        return x.squeeze(), y
 
 
 class SOMA_PCA_Data(Dataset):
