@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from ..models.VAE import VAE_loss
 
 
 class Losses:
@@ -55,5 +56,7 @@ class Losses:
             return self.MAE
         elif loss_name == "Lag":
             return self.LagrangianLoss
+        elif loss_name == "VAE":
+            return VAE_loss
         else:
             raise Exception("Loss name not recognized!")

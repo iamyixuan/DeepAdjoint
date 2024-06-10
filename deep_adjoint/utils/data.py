@@ -195,7 +195,7 @@ class SOMAdata(BaseData):
         y = data[
             i + self.hist_len : i + self.hist_len + self.horizon,
             ...,
-            self.var_idx[:-1],
+            self.var_idx[:-1] : self.var_idx[-1] + 1,
         ]
 
         # check if the time dimension matches
@@ -203,8 +203,13 @@ class SOMAdata(BaseData):
             x = x[np.newaxis, ...]
             x = np.repeat(x, self.horizon, axis=0)
 
+        if self.hist_len == 1 and self.horizon == 1:
+            x = x.squeeze(dim=0)
+            y = y.squeeze(dim=0)
+            assert x.shape == (60, 100, 100, len(self.var_idx))
+            assert y.shape == (60, 100, 100, len(self.var_idx) - 1)
 
-        return x.squeeze(), y
+        return x, y
 
 
 class SOMA_PCA_Data(Dataset):

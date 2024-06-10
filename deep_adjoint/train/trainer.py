@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import torch
-from torch.distributed import init_process_group, destroy_process_group
+from torch.distributed import destroy_process_group, init_process_group
 from torch.func import jacrev
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -126,12 +126,15 @@ class TrainerSOMA(BaseTrainer):
             train: training dataset
             val: validation dataset
         """
+
         if "load_model" in kwargs:
             if kwargs.get("load_model") is True:
                 print("Loading pretrained model...")
                 assert "model_path" in kwargs, "Provide a saved model path!"
                 model_path = kwargs.get("model_path")
                 self.net.module.load_state_dict(torch.load(model_path))
+
+        self.train_vae = kwargs.get("train_vae", False)
 
         # self.net.to(self.device)
         self.net.train()
@@ -171,21 +174,31 @@ class TrainerSOMA(BaseTrainer):
                 y_train = y_train.to(self.gpu_id)
 
                 optimizer.zero_grad()
-                out = self.net(x_train)
 
-                batch_loss = self.ls_fn(
-                    y_train, out, mask=mask
-                )  # enable mask for Unet and ResNet
+                if self.train_vae:
+                    out, out_mean, out_log_var = self.net(x_train)
+                    batch_loss = self.ls_fn(
+                        x_train, out, out_mean, out_log_var
+                    )
+                else:
+                    out = self.net(x_train)
+                    batch_loss = self.ls_fn(
+                        y_train, out, mask=mask
+                    )  # enable mask for Unet and ResNet
+
                 batch_loss.backward()
                 running_loss.append(batch_loss.detach().cpu().numpy())
                 # running_metrics.append(batch_metric)
                 optimizer.step()
             # scheduler.step()
             with torch.no_grad():
-                val_out = self.net(x_val)
-                if self.dual_train:
-                    val_loss = self.ls_fn(y_val, val_out, adj_val)
+                if self.train_vae:
+                    val_out, val_mean, val_log_var = self.net(x_val)
+                    val_loss = self.ls_fn(
+                        x_val, val_out, val_mean, val_log_var
+                    )
                 else:
+                    val_out = self.net(x_val)
                     val_loss = self.ls_fn(y_val, val_out, mask=mask)
                     # val_metrics = get_metrics(y_val.detach().cpu().numpy(), val_out.detach().cpu().numpy())
 
