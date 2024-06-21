@@ -25,3 +25,6 @@ notebooks/
 experiments/
 *.npy
 *.egg-info/
+*.swp
+*.sh
+

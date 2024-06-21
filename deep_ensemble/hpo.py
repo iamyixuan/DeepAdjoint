@@ -105,8 +105,8 @@ def run(job: RunningJob):
     torch.cuda.manual_seed(0)
 
     net = FNO(
-        in_channels=6,
-        out_channels=5,
+        in_channels=5,
+        out_channels=4,
         decoder_layers=config["num_projs"],
         decoder_layer_size=config["proj_size"],
         decoder_activation_fn=config["proj_act"],

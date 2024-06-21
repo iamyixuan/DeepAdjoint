@@ -44,6 +44,20 @@ class BaseData(Dataset, ABC):
     def transform(self, x, y):
         return x, y
 
+class SimpleDataset(Dataset):
+    def __init__(self, file_path):
+        super(SimpleDataset, self)
+        self.data = h5py.File(file_path, 'r')
+
+    def __len__(self):
+        return self.data['x'].shape[0]
+    def __getitem__(self, index):
+        x = self.data['x'][index, ...]
+        x = np.transpose(x, axes=[3, 0, 1, 2])
+        y = self.data['y'][index, ...]
+        y = np.transpose(y, axes=[3, 0, 1, 2])
+        return torch.from_numpy(x).float(), torch.from_numpy(y).float()
+    
 
 class SOMAdata(BaseData):
     def __init__(
@@ -84,7 +98,7 @@ class SOMAdata(BaseData):
             [34.24358, 18.84177, 13.05347, 0.906503, 1.640676, 2000]
         )
 
-        self.scaler = DataScaler(data_min=data_min, data_max=data_max)
+        #self.scaler = DataScaler(data_min=data_min, data_max=data_max)
 
         with open(
             "/global/homes/y/yixuans/DeepAdjoint/tmp/SOMA_mask.pkl", "rb"
@@ -171,6 +185,7 @@ class SOMAdata(BaseData):
             # move the channel axis to the second for data loading
             self.mean = np.transpose(self.mean, axes=[0, 4, 1, 2, 3])
             self.std = np.transpose(self.std, axes=[0, 4, 1, 2, 3])
+
             print("Done")
 
         elif self.mode == "val":
@@ -192,11 +207,7 @@ class SOMAdata(BaseData):
         """
 
         x = data[i : i + self.hist_len, ..., self.var_idx]
-        y = data[
-            i + self.hist_len : i + self.hist_len + self.horizon,
-            ...,
-            self.var_idx[:-1] : self.var_idx[-1] + 1,
-        ]
+        y = data[i + self.hist_len : i + self.hist_len + self.horizon, ..., self.var_idx[:-1]]
 
         # check if the time dimension matches
         if x.shape[0] < y.shape[0]:
@@ -204,8 +215,8 @@ class SOMAdata(BaseData):
             x = np.repeat(x, self.horizon, axis=0)
 
         if self.hist_len == 1 and self.horizon == 1:
-            x = x.squeeze(dim=0)
-            y = y.squeeze(dim=0)
+            x = x.squeeze(0)
+            y = y.squeeze(0)
             assert x.shape == (60, 100, 100, len(self.var_idx))
             assert y.shape == (60, 100, 100, len(self.var_idx) - 1)
 

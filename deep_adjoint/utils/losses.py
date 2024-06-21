@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from ..models.VAE import VAE_loss
+from ..model.VAE import VAE_loss
 
 
 class Losses:

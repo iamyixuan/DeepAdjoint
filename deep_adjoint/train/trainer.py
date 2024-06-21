@@ -50,8 +50,9 @@ class BaseTrainer(ABC):
             data_name = kwargs.get("data_name")
 
         self.exp_path = f"./experiments/{model_type}-{data_name}-{loss_name}-{optimizer_name}/"
+
         if not os.path.exists(self.exp_path):
-            os.makedirs(self.exp_path)
+            os.makedirs(self.exp_path, exist_ok=True)
 
         logging.basicConfig(
             level=logging.INFO,
@@ -100,7 +101,7 @@ class TrainerSOMA(BaseTrainer):
             self.ls_fn = FNO_losses.LpLoss(d=4, p=2)
             # self.ls_fn = FNO_losses.MSE_ACCLoss()
         else:
-            self.ls_fn = Losses(loss_name)()
+            self.ls_fn = Losses(loss_name)()()
         self.net = net.to(gpu_id)
 
         if int(os.environ["TRAIN"]) == 1:
@@ -166,8 +167,11 @@ class TrainerSOMA(BaseTrainer):
         print(
             f"Training set size: {train.__len__()}, validation set size: {val.__len__()}"
         )
+        if self.train_vae:
+            print("Training the autoencoder...")
         best_val = np.inf
-        for ep in tqdm(range(epochs)):
+        pbar = tqdm(range(epochs))
+        for ep in pbar:
             running_loss = []
             for x_train, y_train in train_loader:
                 x_train = x_train.to(self.gpu_id)
@@ -189,6 +193,7 @@ class TrainerSOMA(BaseTrainer):
                 batch_loss.backward()
                 running_loss.append(batch_loss.detach().cpu().numpy())
                 # running_metrics.append(batch_metric)
+                torch.nn.utils.clip_grad_norm_(self.net.parameters(), 0.1)
                 optimizer.step()
             # scheduler.step()
             with torch.no_grad():
@@ -205,6 +210,7 @@ class TrainerSOMA(BaseTrainer):
             self.logger.info(
                 f"Epoch: {ep + 1}, Train Loss: {np.mean(running_loss)}, Val Loss: {val_loss.item()}"
             )
+            pbar.set_postfix({'train': np.mean(running_loss), 'val': val_loss.item()})
             if self.gpu_id == 0 and val_loss.item() < best_val:
                 best_val = val_loss.item()
                 torch.save(
@@ -216,7 +222,7 @@ class TrainerSOMA(BaseTrainer):
         test_loader = DataLoader(test_data, batch_size=12)
         y_true = []
         y_pred = []
-        gm = []
+        x_ = []
         self.net.eval()
         self.net.to(self.gpu_id)
         if checkpoint is not None:
@@ -225,11 +231,11 @@ class TrainerSOMA(BaseTrainer):
             x = x.to(self.gpu_id)
             y = y.to(self.gpu_id)
             with torch.no_grad():
-                pred = self.net(x)
+                pred, mu, var = self.net(x)
                 y_true.append(y.detach().cpu().numpy())
                 y_pred.append(pred.detach().cpu().numpy())
-                gm.append(x.detach().cpu().numpy())
-        return y_true, y_pred, gm
+                x_.append(x.detach().cpu().numpy())
+        return y_true, y_pred, x
 
 
 def pred_rollout(net, gpu_id, test_data, checkpoint=None):

@@ -56,12 +56,17 @@ class NLLLoss(nn.Module):
         true has shape (B, 5, 100, 100)
 
         """
-        mean = pred[:, :5, :, :]
-        std = pred[:, 5:, :, :]
-        return torch.mean(
-            0.5 * torch.log(2 * np.pi * std**2)
-            + 0.5 * (true - mean)**2 / std**2
-        )
+        ch = true.shape[1]
+        mean = pred[:, :ch, :, :]
+        var = pred[:, ch:, :, :]
+        a = 0.5 * torch.log(var)
+        b = 0.5 * ((true - mean)**2 / var)
+        # print(var.mean().item())
+        # return torch.mean(
+        #     0.5 * torch.log(2 * np.pi * var)
+        #     + 0.5 * ((true - mean)**2 / var)
+        # )
+        return torch.mean(a + b)
 
 
 class ACCLoss(nn.Module):

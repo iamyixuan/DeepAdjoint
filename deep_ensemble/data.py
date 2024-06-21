@@ -38,6 +38,44 @@ class ChannelMinMaxScaler(MinMaxScaler):
         self.data_max = np.nanmax(data, axis=axis_apply, keepdims=True)
 
 
+class SimpleDataset(Dataset):
+    def __init__(self, file_path):
+        super(SimpleDataset, self)
+        self.data = h5py.File(file_path, 'r')
+        maxs = np.array([18.84177, 13.05347, 0.906503, 1.640676, 2000])
+        mins = np.array([5.144762, 4.539446, 3.82e-8, 6.95e-9, 200])
+
+        self.maxs = maxs[None, None, :]
+        self.mins = mins[None, None, :]
+
+    def __len__(self):
+        return self.data['x'].shape[0]
+
+    def __getitem__(self, index):
+        x = self.data['x'][index, ...]
+        x = self.transform(x)
+        x = np.transpose(x, axes=[2, 0, 1])
+
+        y = self.data['y'][index, ...]
+        y = self.transform(y) 
+        y = np.transpose(y, axes=[2, 0, 1])
+        return torch.from_numpy(x).float(), torch.from_numpy(y).float()
+
+    def transform(self, x):
+        if x.shape[-1] == 4:
+            return (x - self.mins[..., :-1]) / (self.maxs - self.mins)[..., :-1] 
+        else:
+            return (x - self.mins) / (self.maxs - self.mins) 
+
+    def inverse_transform(self, x):
+        if x.shape[-1] == 4:
+            return x * (self.maxs - self.mins)[..., :-1] + self.mins[..., :-1]
+        else:
+            return x * (self.maxs - self.mins) + self.mins
+
+
+
+
 class DataScaler:
     '''
     Layer thickness: [4.539446, 13.05347]

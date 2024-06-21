@@ -8,7 +8,7 @@ from torch.distributed import init_process_group
 from deep_adjoint.model.VAE import VAE
 from deep_adjoint.train.trainer import (TrainerSOMA, destroy_process_group,
                                         pred_rollout)
-from deep_adjoint.utils.data import SOMAdata
+from deep_adjoint.utils.data import SimpleDataset
 
 
 def run(args):
@@ -38,33 +38,14 @@ def run(args):
         args.gpu = 0
 
     # ================= Load data =================
-
-    if args.data == "GM":
-        data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset3.hdf5"
-    elif args.data == "REDI":
-        data_path = (
-            "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-redi-2.hdf5"
-        )
-    elif args.data == "CVMIX":
-        data_path = (
-            "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-cvmix-2.hdf5"
-        )
-    elif args.data == "BTTMDRAG":
-        data_path = "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-impliciBottomDrag.hdf5"
-    elif args.data == "GM_D_AVG":
-        data_path = (
-            "/pscratch/sd/y/yixuans/datatset/SOMA/thedataset-GM-dayAvg-2.hdf5"
-        )
-    else:
-        raise TypeError("Dataset not recognized!")
-
-    train_set = SOMAdata(path=data_path, horizon=3, var_idx=[8], mode="train")
-    val_set = SOMAdata(path=data_path, horizon=3, var_idx=[8], mode="val")
-    test_set = SOMAdata(path=data_path, horizon=3, var_idx=[8], mode="test")
+    SCRATCH = '/pscratch/sd/y/yixuans/'
+    train_set = SimpleDataset(file_path=SCRATCH+'temp_vae_train.h5')
+    val_set = SimpleDataset(file_path=SCRATCH+'temp_vae_val.h5')
+    test_set = SimpleDataset(file_path=SCRATCH+'temp_vae_test.h5')
 
     # ================= Load model =================
 
-    net = VAE(input_ch=2, hidden_ch=32, latent_dim=16)
+    net = VAE(input_ch=1, hidden_ch=32, latent_dim=16, scaler=None, train_data_stats=None) 
 
     trainer = TrainerSOMA(
         net=net,
@@ -91,6 +72,19 @@ def run(args):
 
         destroy_process_group()
 
+        _, pred, x = trainer.predict(test_data=test_set)
+        save_path = f"/pscratch/sd/y/yixuans/{trainer.exp_path}"
+
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        with open(
+            f"{save_path}/test-predictions.pkl",
+            "wb",
+        ) as f:
+            true_pred = { "pred": pred, "x": x}
+            pickle.dump(true_pred, f)
+
     elif args.train == "False":
         true, pred, param = trainer.predict(
             test_data=test_set, checkpoint=args.model_path
@@ -113,14 +107,14 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-epochs", default=1000, type=int)
-    parser.add_argument("-batch_size", default=8, type=int)
-    parser.add_argument("-lr", default=0.001, type=float)
+    parser.add_argument("-batch_size", default=32, type=int)
+    parser.add_argument("-lr", default=1e-5, type=float)
     parser.add_argument("-train", default="True", type=str)
     parser.add_argument("-model", type=str, default="4D")
     parser.add_argument("-load_model", action="store_true")
     parser.add_argument("-model_path", type=str)
     parser.add_argument("-save_freq", type=int, default=100)
-    parser.add_argument("-data", type=str, default="GM")
+    parser.add_argument("-data", type=str, default="GM_D_AVG")
 
     parser.add_argument(
         "--world-size",

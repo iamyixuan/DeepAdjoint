@@ -10,6 +10,7 @@ class ChannelStandardScaler:
             self.std_ = kwargs.get("std")
 
         elif kwargs.get("data") is not None:
+            data = kwargs.get("data")
             self.init(data, **kwargs)
         else:
             raise ValueError("Either mean and std or data should be provided")

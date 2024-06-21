@@ -11,16 +11,56 @@ import torch
 from modulus.models.fno import FNO
 from torch.utils.data import DataLoader
 
-from data import SOMAdata
+from data import SimpleDataset, SOMAdata
 from metrics import NLLLoss
 from model import Trainer
 
+class FNO_MU_STD(torch.nn.Module):
+    def __init__(self,
+            in_channels,
+            out_channels,
+            decoder_layers,
+            decoder_layer_size,
+            decoder_activation_fn,
+            dimension,
+            latent_channels,
+            num_fno_layers,
+            num_fno_modes,
+            padding,
+            padding_type,
+            activation_fn,
+            coord_features,
+        ):
+        super(FNO_MU_STD, self).__init__()
+        self.FNO = FNO(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            decoder_layers=decoder_layers,
+            decoder_layer_size=decoder_layer_size,
+            decoder_activation_fn=decoder_activation_fn,
+            dimension=dimension,
+            latent_channels=latent_channels,
+            num_fno_layers=num_fno_layers,
+            num_fno_modes=num_fno_modes,
+            padding=padding,
+            padding_type=padding_type,
+            activation_fn=activation_fn,
+            coord_features=coord_features,
+        )
+        self.std_act = torch.nn.Softplus()
+    def forward(self, x):
+        x = self.FNO(x)
+        ch = x.shape[1] // 2
+        mu = x[:, :ch, ...]
+        std = self.std_act(x[:, ch:, ...])
+        out = torch.cat([mu, std], dim=1)
+        return out
 
 def run(config, args):
     np.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.manual_seed(0)
-    net = FNO(
+    net = FNO_MU_STD(
         in_channels=6,
         out_channels=5 * 2,
         decoder_layers=config["num_projs"],
@@ -36,21 +76,32 @@ def run(config, args):
         coord_features=config["coord_feat"],
     )
 
+    # trainset = SimpleDataset(
+    #     '/pscratch/sd/y/yixuans/datatset/de_dataset/soma_deep_ensemble_train.h5'
+    #     )
+    # valset = SimpleDataset(
+    #     '/pscratch/sd/y/yixuans/datatset/de_dataset/soma_deep_ensemble_val.h5'
+    # )
+    # testSet = SimpleDataset(
+    #     '/pscratch/sd/y/yixuans/datatset/de_dataset/soma_deep_ensemble_test.h5'
+    # )
+
     trainset = SOMAdata(
-        args.data_path,
+        "/pscratch/sd/y/yixuans/datatset/de_dataset/GM-prog-var-surface.hdf5",
         "train",
         transform=True,
     )
     valset = SOMAdata(
-        args.data_path,
+        "/pscratch/sd/y/yixuans/datatset/de_dataset/GM-prog-var-surface.hdf5",
         "val",
         transform=True,
     )
     testSet = SOMAdata(
-        args.data_path,
+        "/pscratch/sd/y/yixuans/datatset/de_dataset/GM-prog-var-surface.hdf5",
         "test",
         transform=True,
     )
+
 
     # TrainLossFn = MSE_ACCLoss(alpha=config['alpha'])
     TrainLossFn = NLLLoss()
@@ -67,23 +118,22 @@ def run(config, args):
     log = trainer.train(
         trainLoader=trainLoader,
         valLoader=valLoader,
-        epochs=100,
+        epochs=500,
         optimizer=config["optimizer"],
-        learningRate=config["lr"],
+        learningRate=1e-4, #config["lr"],
         weight_decay=config["weight_decay"],
     )
-    time_now = datetime.now().strftime("%Y%m%d_%H-%M")
 
-    with open(f"{time_now}_ensemble{args.ensemble_id}_log.pkl", "wb") as f:
+    with open(f"./experiments/ensemble{args.ensemble_id}_log2.pkl", "wb") as f:
         pickle.dump(log.logger, f)
 
     pred, true = trainer.predict(testLoader)
-    np.savez(f"{time_now}_{args.ensemble_id}Pred.npz", true=true, pred=pred)
+    np.savez(f"./experiments/{args.ensemble_id}_Pred2.npz", true=true, pred=pred)
 
     trainLoss = log.logger["TrainLoss"]
     valLoss = log.logger["ValLoss"]
 
-    with open(f"{time_now}_{args.ensemble_id}_train_curve.pkl", "wb") as f:
+    with open(f"./experiments/{args.ensemble_id}_train_curve2.pkl", "wb") as f:
         pickle.dump({"train": trainLoss, "val": valLoss}, f)
 
     # rolloutPred = trainer.rollout(rolloutLoader)
@@ -101,16 +151,18 @@ def getBestConfig(df, ensemble_id):
     # df = df[df['pareto_efficient']==True]
 
     # convert to float and take the negative
-    # df["objective"] = -df["objective"].astype(float)
+    df["objective_0"] = df["objective_0"].astype(float)
+    df["objective_1"] = df["objective_1"].astype(float)
     # Pick the best objectives
 
-    min_row_index = (
+    max_row_index = (
         (df["objective_0"] + df["objective_1"])
-        .sort_values()
+        .sort_values(ascending=False)
         .index[ensemble_id]
     )
     df = df.rename(columns=lambda x: x.replace("p:", ""))
-    return df.loc[min_row_index]
+    print("config acc is", df.loc[max_row_index]['objective_1'])
+    return df.loc[max_row_index]
 
 
 if __name__ == "__main__":
@@ -118,8 +170,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--df_path", type=str)
-    parser.add_argument("--data_path", type=str)
+    parser.add_argument("--df_path", type=str, default='./results/results.csv')
     parser.add_argument("--ensemble_id", type=int, default=0)
     args = parser.parse_args()
 

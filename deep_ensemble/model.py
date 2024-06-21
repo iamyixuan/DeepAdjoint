@@ -63,6 +63,8 @@ class Trainer:
         self.model = model
         self.TrainLossFn = TrainLossFn
         self.ValLossFn = ValLossFn
+        self.device = torch.device("cuda")
+        self.model.to(self.device)
 
     def train(
         self,
@@ -82,6 +84,7 @@ class Trainer:
 
         logger = Logger("./log/")
         bestVal = np.inf
+
         self.model.train()
         logger.log(
             "NumTrainableParams",
@@ -95,6 +98,8 @@ class Trainer:
 
             
             for xTrain, yTrain in trainLoader:
+                xTrain = xTrain.to(self.device)
+                yTrain = yTrain.to(self.device)
                 optimizer.zero_grad()
                 pred = self.model(xTrain)
                 loss = self.TrainLossFn(yTrain, pred)
@@ -120,6 +125,8 @@ class Trainer:
             logger.log("ValLoss", valLoss.item())
             logger.log("ValACC", acc)
             logger.log("ValR2", r2)
+            print("train loss", np.mean(runningLoss))
+            print("val loss", valLoss.item())
 
             if iteration_time > 200:
                 break # break the high computational cost configurations
@@ -130,30 +137,35 @@ class Trainer:
 
     def val(self, valLoader):
         self.model.eval()
-        for xVal, yVal in valLoader:
-            predVal = self.model(xVal)
-            
-            # only use MSE as loss with additional metrics
-            valLoss = self.ValLossFn(yVal, predVal)
-            acc = anomalyCorrelationCoef(yVal.detach().numpy(), predVal[:, :5, ...].detach().numpy())
-            r2_score = r2(yVal.detach().numpy(), predVal[:, :5, ...].detach().numpy())
+        with torch.no_grad():
+            for xVal, yVal in valLoader:
+                xVal = xVal.to(self.device)
+                yVal = yVal.to(self.device)
+                predVal = self.model(xVal)
+                
+                # only use MSE as loss with additional metrics
+                valLoss = self.ValLossFn(yVal, predVal)
+                acc = anomalyCorrelationCoef(yVal.detach().cpu().numpy(), predVal[:,:5,...].detach().cpu().numpy())
+                r2_score = r2(yVal.detach().cpu().numpy(), predVal[:,:5, ...].detach().cpu().numpy())
         return valLoss, acc, r2_score
 
-    def test(self, testLoader):
-        self.model.eval()
-        start_time = time.time()
-        for xTest, yTest in testLoader:
-            predTest = self.model(xTest)
-            testLoss = self.ValLossFn(yTest, predTest)
-        inferenceTime = time.time() - start_time
-        return testLoss.item(), inferenceTime
+    # def test(self, testLoader):
+    #     self.model.eval()
+    #     start_time = time.time()
+    #     for xTest, yTest in testLoader:
+    #         predTest = self.model(xTest)
+    #         testLoss = self.ValLossFn(yTest, predTest)
+    #     inferenceTime = time.time() - start_time
+    #     return testLoss.item(), inferenceTime
     
     def predict(self, testLoader):
         self.model.eval()
-        start_time = time.time()
-        for xTest, yTest in testLoader:
-            predTest = self.model(xTest)
-        return predTest.detach().numpy(), yTest.numpy()
+        with torch.no_grad():
+            for xTest, yTest in testLoader:
+                xTest = xTest.to(self.device)
+                yTest = yTest.to(self.device)
+                predTest = self.model(xTest)
+        return predTest.detach().cpu().numpy(), yTest.cpu().numpy()
     
     def rollout(self, dataloader):
         self.model.eval()
