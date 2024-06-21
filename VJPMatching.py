@@ -77,9 +77,7 @@ class MLP:
 
         def adjoint_vect_prod(params, x, v):
             evaluated_value, vect_prod_fn = jax.vjp(self.forward, params, x)
-            vect_prod = vect_prod_fn(v)[
-                1
-            ]  # shape same as the input dimension
+            vect_prod = vect_prod_fn(v)[1]  # shape same as the input dimension
             return vect_prod
 
         return vmap(adjoint_vect_prod, in_axes=(None, 0, 0), out_axes=0)(params, x, v)
@@ -94,7 +92,7 @@ class Trainer:
         learning_rate,
         optimizer,
         if_full_Jacobian="False",
-        if_p_only="False"
+        if_p_only="False",
     ):
         """Trainer for the adjoint matching neural network
         args:
@@ -116,11 +114,8 @@ class Trainer:
     def loss(self, params, x, y, adj_y, alpha):
         # calcuate vector-true jacobian product
         def vect_jcob_prod(v, jcob):
-            return (
-                v @ jcob
-            )  # change the dimension to obtain the proper product
+            return v @ jcob  # change the dimension to obtain the proper product
 
-        
         pred = self.net.apply(params, x)
         v = pred - y
         true_v_j_prod = vmap(vect_jcob_prod, in_axes=0, out_axes=0)(v, adj_y)
@@ -308,7 +303,6 @@ if __name__ == "__main__":
         x, y, adj = combine_burgers_data("./deep_adjoint/Data/mixed_nu/")
         train, val, test = split_data(x, y, adj, shuffle_all=True)
 
-
     scaler = StandardScaler(train["x"])
 
     net = MLP(
@@ -325,6 +319,6 @@ if __name__ == "__main__":
         learning_rate=args.lr,
         optimizer=optax.adam,
         if_full_Jacobian="True",
-        if_p_only="True"
+        if_p_only="True",
     )
     net_params = sup.train_(net.params, train, val, args.a, now_str)

@@ -94,9 +94,9 @@ class SpatialSELayer3D(nn.Module):
 
 class ChannelSpatialSELayer3D(nn.Module):
     """
-       3D extension of concurrent spatial and channel squeeze & excitation:
-           *Roy et al., Concurrent Spatial and Channel Squeeze & Excitation in Fully Convolutional Networks, arXiv:1803.02579*
-       """
+    3D extension of concurrent spatial and channel squeeze & excitation:
+        *Roy et al., Concurrent Spatial and Channel Squeeze & Excitation in Fully Convolutional Networks, arXiv:1803.02579*
+    """
 
     def __init__(self, num_channels, reduction_ratio=2):
         """

@@ -44,9 +44,11 @@ class NeuralAdjoint:
         return resim_loss + bn_loss, (resim_loss, bn_loss)
 
     def data_assimilation_loss(self, x, y, l1=1, l2=1):
-        obs_loss = torch.sum((x[1:, :-1] - y[:-1,...]) ** 2) # only use the state, excluding external \nu.
+        obs_loss = torch.sum(
+            (x[1:, :-1] - y[:-1, ...]) ** 2
+        )  # only use the state, excluding external \nu.
         x_bar = self.forwardNet(
-            x[:-1,...] # reshape to (num_timesteps, num_locs)
+            x[:-1, ...]  # reshape to (num_timesteps, num_locs)
         )  # to make prediction. x_bar has 1 less timestep than the full solution.
         dym_loss = torch.sum((x[1:, :-1] - x_bar) ** 2)
         da_loss = l1 * obs_loss + l2 * dym_loss
@@ -140,6 +142,7 @@ def main():
         pred = inverse_model.inverse_solve(
             y[:200, :], mu_x, R_x, 2500, str(n) + "trajectoryLoss"
         )
+
 
 def DA_main():
     net = FFN([129] + [200] * 5 + [128], "relu")

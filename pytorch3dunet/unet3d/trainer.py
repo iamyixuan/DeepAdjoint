@@ -9,26 +9,33 @@ from pytorch3dunet.datasets.utils import get_train_loaders
 from pytorch3dunet.unet3d.losses import get_loss_criterion
 from pytorch3dunet.unet3d.metrics import get_evaluation_metric
 from pytorch3dunet.unet3d.model import get_model, UNet2D
-from pytorch3dunet.unet3d.utils import get_logger, get_tensorboard_formatter, create_optimizer, \
-    create_lr_scheduler, get_number_of_learnable_parameters
+from pytorch3dunet.unet3d.utils import (
+    get_logger,
+    get_tensorboard_formatter,
+    create_optimizer,
+    create_lr_scheduler,
+    get_number_of_learnable_parameters,
+)
 from . import utils
 
-logger = get_logger('UNetTrainer')
+logger = get_logger("UNetTrainer")
 
 
 def create_trainer(config):
     # Create the model
-    model = get_model(config['model'])
+    model = get_model(config["model"])
 
-    if torch.cuda.device_count() > 1 and not config['device'] == 'cpu':
+    if torch.cuda.device_count() > 1 and not config["device"] == "cpu":
         model = nn.DataParallel(model)
-        logger.info(f'Using {torch.cuda.device_count()} GPUs for prediction')
+        logger.info(f"Using {torch.cuda.device_count()} GPUs for prediction")
         model = model.cuda()
-    if torch.cuda.is_available() and not config['device'] == 'cpu':
+    if torch.cuda.is_available() and not config["device"] == "cpu":
         model = model.cuda()
 
     # Log the number of learnable parameters
-    logger.info(f'Number of learnable params {get_number_of_learnable_parameters(model)}')
+    logger.info(
+        f"Number of learnable params {get_number_of_learnable_parameters(model)}"
+    )
 
     # Create loss criterion
     loss_criterion = get_loss_criterion(config)
@@ -39,21 +46,32 @@ def create_trainer(config):
     loaders = get_train_loaders(config)
 
     # Create the optimizer
-    optimizer = create_optimizer(config['optimizer'], model)
+    optimizer = create_optimizer(config["optimizer"], model)
 
     # Create learning rate adjustment strategy
-    lr_scheduler = create_lr_scheduler(config.get('lr_scheduler', None), optimizer)
+    lr_scheduler = create_lr_scheduler(config.get("lr_scheduler", None), optimizer)
 
-    trainer_config = config['trainer']
+    trainer_config = config["trainer"]
     # Create tensorboard formatter
-    tensorboard_formatter = get_tensorboard_formatter(trainer_config.pop('tensorboard_formatter', None))
+    tensorboard_formatter = get_tensorboard_formatter(
+        trainer_config.pop("tensorboard_formatter", None)
+    )
     # Create trainer
-    resume = trainer_config.pop('resume', None)
-    pre_trained = trainer_config.pop('pre_trained', None)
+    resume = trainer_config.pop("resume", None)
+    pre_trained = trainer_config.pop("pre_trained", None)
 
-    return UNetTrainer(model=model, optimizer=optimizer, lr_scheduler=lr_scheduler, loss_criterion=loss_criterion,
-                       eval_criterion=eval_criterion, loaders=loaders, tensorboard_formatter=tensorboard_formatter,
-                       resume=resume, pre_trained=pre_trained, **trainer_config)
+    return UNetTrainer(
+        model=model,
+        optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
+        loss_criterion=loss_criterion,
+        eval_criterion=eval_criterion,
+        loaders=loaders,
+        tensorboard_formatter=tensorboard_formatter,
+        resume=resume,
+        pre_trained=pre_trained,
+        **trainer_config,
+    )
 
 
 class UNetTrainer:
@@ -87,11 +105,29 @@ class UNetTrainer:
             evaluation is expensive)
     """
 
-    def __init__(self, model, optimizer, lr_scheduler, loss_criterion, eval_criterion, loaders, checkpoint_dir,
-                 max_num_epochs, max_num_iterations, validate_after_iters=200, log_after_iters=100, validate_iters=None,
-                 num_iterations=1, num_epoch=0, eval_score_higher_is_better=True, tensorboard_formatter=None,
-                 skip_train_validation=False, resume=None, pre_trained=None, **kwargs):
-
+    def __init__(
+        self,
+        model,
+        optimizer,
+        lr_scheduler,
+        loss_criterion,
+        eval_criterion,
+        loaders,
+        checkpoint_dir,
+        max_num_epochs,
+        max_num_iterations,
+        validate_after_iters=200,
+        log_after_iters=100,
+        validate_iters=None,
+        num_iterations=1,
+        num_epoch=0,
+        eval_score_higher_is_better=True,
+        tensorboard_formatter=None,
+        skip_train_validation=False,
+        resume=None,
+        pre_trained=None,
+        **kwargs,
+    ):
         self.model = model
         self.optimizer = optimizer
         self.scheduler = lr_scheduler
@@ -107,17 +143,19 @@ class UNetTrainer:
         self.eval_score_higher_is_better = eval_score_higher_is_better
 
         logger.info(model)
-        logger.info(f'eval_score_higher_is_better: {eval_score_higher_is_better}')
+        logger.info(f"eval_score_higher_is_better: {eval_score_higher_is_better}")
 
         # initialize the best_eval_score
         if eval_score_higher_is_better:
-            self.best_eval_score = float('-inf')
+            self.best_eval_score = float("-inf")
         else:
-            self.best_eval_score = float('+inf')
+            self.best_eval_score = float("+inf")
 
-        self.writer = SummaryWriter(log_dir=os.path.join(checkpoint_dir, 'logs'))
+        self.writer = SummaryWriter(log_dir=os.path.join(checkpoint_dir, "logs"))
 
-        assert tensorboard_formatter is not None, 'TensorboardFormatter must be provided'
+        assert (
+            tensorboard_formatter is not None
+        ), "TensorboardFormatter must be provided"
         self.tensorboard_formatter = tensorboard_formatter
 
         self.num_iterations = num_iterations
@@ -131,14 +169,14 @@ class UNetTrainer:
                 f"Checkpoint loaded from '{resume}'. Epoch: {state['num_epochs']}.  Iteration: {state['num_iterations']}. "
                 f"Best val score: {state['best_eval_score']}."
             )
-            self.best_eval_score = state['best_eval_score']
-            self.num_iterations = state['num_iterations']
-            self.num_epochs = state['num_epochs']
+            self.best_eval_score = state["best_eval_score"]
+            self.num_iterations = state["num_iterations"]
+            self.num_epochs = state["num_epochs"]
             self.checkpoint_dir = os.path.split(resume)[0]
         elif pre_trained is not None:
             logger.info(f"Logging pre-trained model from '{pre_trained}'...")
             utils.load_checkpoint(pre_trained, self.model, None)
-            if 'checkpoint_dir' not in kwargs:
+            if "checkpoint_dir" not in kwargs:
                 self.checkpoint_dir = os.path.split(pre_trained)[0]
 
     def fit(self):
@@ -147,11 +185,13 @@ class UNetTrainer:
             should_terminate = self.train()
 
             if should_terminate:
-                logger.info('Stopping criterion is satisfied. Finishing training')
+                logger.info("Stopping criterion is satisfied. Finishing training")
                 return
 
             self.num_epochs += 1
-        logger.info(f"Reached maximum number of epochs: {self.max_num_epochs}. Finishing training...")
+        logger.info(
+            f"Reached maximum number of epochs: {self.max_num_epochs}. Finishing training..."
+        )
 
     def train(self):
         """Trains the model for 1 epoch.
@@ -165,9 +205,11 @@ class UNetTrainer:
         # sets the model in training mode
         self.model.train()
 
-        for t in self.loaders['train']:
-            logger.info(f'Training iteration [{self.num_iterations}/{self.max_num_iterations}]. '
-                        f'Epoch [{self.num_epochs}/{self.max_num_epochs - 1}]')
+        for t in self.loaders["train"]:
+            logger.info(
+                f"Training iteration [{self.num_iterations}/{self.max_num_iterations}]. "
+                f"Epoch [{self.num_epochs}/{self.max_num_epochs - 1}]"
+            )
 
             input, target, weight = self._split_training_batch(t)
 
@@ -209,10 +251,11 @@ class UNetTrainer:
 
                 # log stats, params and images
                 logger.info(
-                    f'Training stats. Loss: {train_losses.avg}. Evaluation score: {train_eval_scores.avg}')
-                self._log_stats('train', train_losses.avg, train_eval_scores.avg)
+                    f"Training stats. Loss: {train_losses.avg}. Evaluation score: {train_eval_scores.avg}"
+                )
+                self._log_stats("train", train_losses.avg, train_eval_scores.avg)
                 # self._log_params()
-                self._log_images(input, target, output, 'train_')
+                self._log_images(input, target, output, "train_")
 
             if self.should_stop():
                 return True
@@ -227,26 +270,28 @@ class UNetTrainer:
         some predefined threshold (1e-6 in our case)
         """
         if self.max_num_iterations < self.num_iterations:
-            logger.info(f'Maximum number of iterations {self.max_num_iterations} exceeded.')
+            logger.info(
+                f"Maximum number of iterations {self.max_num_iterations} exceeded."
+            )
             return True
 
         min_lr = 1e-6
-        lr = self.optimizer.param_groups[0]['lr']
+        lr = self.optimizer.param_groups[0]["lr"]
         if lr < min_lr:
-            logger.info(f'Learning rate below the minimum {min_lr}.')
+            logger.info(f"Learning rate below the minimum {min_lr}.")
             return True
 
         return False
 
     def validate(self):
-        logger.info('Validating...')
+        logger.info("Validating...")
 
         val_losses = utils.RunningAverage()
         val_scores = utils.RunningAverage()
 
         with torch.no_grad():
-            for i, t in enumerate(self.loaders['val']):
-                logger.info(f'Validation iteration {i}')
+            for i, t in enumerate(self.loaders["val"]):
+                logger.info(f"Validation iteration {i}")
 
                 input, target, weight = self._split_training_batch(t)
 
@@ -254,7 +299,7 @@ class UNetTrainer:
                 val_losses.update(loss.item(), self._batch_size(input))
 
                 if i % 100 == 0:
-                    self._log_images(input, target, output, 'val_')
+                    self._log_images(input, target, output, "val_")
 
                 eval_score = self.eval_criterion(output, target)
                 val_scores.update(eval_score.item(), self._batch_size(input))
@@ -263,8 +308,10 @@ class UNetTrainer:
                     # stop validation
                     break
 
-            self._log_stats('val', val_losses.avg, val_scores.avg)
-            logger.info(f'Validation finished. Loss: {val_losses.avg}. Evaluation score: {val_scores.avg}')
+            self._log_stats("val", val_losses.avg, val_scores.avg)
+            logger.info(
+                f"Validation finished. Loss: {val_losses.avg}. Evaluation score: {val_scores.avg}"
+            )
             return val_scores.avg
 
     def _split_training_batch(self, t):
@@ -311,7 +358,7 @@ class UNetTrainer:
             is_best = eval_score < self.best_eval_score
 
         if is_best:
-            logger.info(f'Saving new best evaluation metric: {eval_score}')
+            logger.info(f"Saving new best evaluation metric: {eval_score}")
             self.best_eval_score = eval_score
 
         return is_best
@@ -324,38 +371,45 @@ class UNetTrainer:
         else:
             state_dict = self.model.state_dict()
 
-        last_file_path = os.path.join(self.checkpoint_dir, 'last_checkpoint.pytorch')
+        last_file_path = os.path.join(self.checkpoint_dir, "last_checkpoint.pytorch")
         logger.info(f"Saving checkpoint to '{last_file_path}'")
 
-        utils.save_checkpoint({
-            'num_epochs': self.num_epochs + 1,
-            'num_iterations': self.num_iterations,
-            'model_state_dict': state_dict,
-            'best_eval_score': self.best_eval_score,
-            'optimizer_state_dict': self.optimizer.state_dict(),
-        }, is_best, checkpoint_dir=self.checkpoint_dir)
+        utils.save_checkpoint(
+            {
+                "num_epochs": self.num_epochs + 1,
+                "num_iterations": self.num_iterations,
+                "model_state_dict": state_dict,
+                "best_eval_score": self.best_eval_score,
+                "optimizer_state_dict": self.optimizer.state_dict(),
+            },
+            is_best,
+            checkpoint_dir=self.checkpoint_dir,
+        )
 
     def _log_lr(self):
-        lr = self.optimizer.param_groups[0]['lr']
-        self.writer.add_scalar('learning_rate', lr, self.num_iterations)
+        lr = self.optimizer.param_groups[0]["lr"]
+        self.writer.add_scalar("learning_rate", lr, self.num_iterations)
 
     def _log_stats(self, phase, loss_avg, eval_score_avg):
         tag_value = {
-            f'{phase}_loss_avg': loss_avg,
-            f'{phase}_eval_score_avg': eval_score_avg
+            f"{phase}_loss_avg": loss_avg,
+            f"{phase}_eval_score_avg": eval_score_avg,
         }
 
         for tag, value in tag_value.items():
             self.writer.add_scalar(tag, value, self.num_iterations)
 
     def _log_params(self):
-        logger.info('Logging model parameters and gradients')
+        logger.info("Logging model parameters and gradients")
         for name, value in self.model.named_parameters():
-            self.writer.add_histogram(name, value.data.cpu().numpy(), self.num_iterations)
-            self.writer.add_histogram(name + '/grad', value.grad.data.cpu().numpy(), self.num_iterations)
+            self.writer.add_histogram(
+                name, value.data.cpu().numpy(), self.num_iterations
+            )
+            self.writer.add_histogram(
+                name + "/grad", value.grad.data.cpu().numpy(), self.num_iterations
+            )
 
-    def _log_images(self, input, target, prediction, prefix=''):
-
+    def _log_images(self, input, target, prediction, prefix=""):
         if isinstance(self.model, nn.DataParallel):
             net = self.model.module
         else:
@@ -364,16 +418,12 @@ class UNetTrainer:
         if net.final_activation is not None:
             prediction = net.final_activation(prediction)
 
-        inputs_map = {
-            'inputs': input,
-            'targets': target,
-            'predictions': prediction
-        }
+        inputs_map = {"inputs": input, "targets": target, "predictions": prediction}
         img_sources = {}
         for name, batch in inputs_map.items():
             if isinstance(batch, list) or isinstance(batch, tuple):
                 for i, b in enumerate(batch):
-                    img_sources[f'{name}{i}'] = b.data.cpu().numpy()
+                    img_sources[f"{name}{i}"] = b.data.cpu().numpy()
             else:
                 img_sources[name] = batch.data.cpu().numpy()
 

@@ -107,7 +107,7 @@ class Trainer:
         self.net.train()
         for epoch in range(self.num_epochs):
             running_losses = np.array([0, 0, 0])
-            for (x_batch, y_batch) in tqdm(train_loader):
+            for x_batch, y_batch in tqdm(train_loader):
                 optimizer.zero_grad()
                 train_batch_loss, aux_loss = self.loss(x_batch, y_batch, alpha)
                 running_losses[0] += train_batch_loss.item()

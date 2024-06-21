@@ -17,7 +17,14 @@ __pycache__/
 tmp/
 saved/
 *.pkl
+*.out
+*.err
 eval_plots/
 neuraloperator/
 notebooks/
+experiments/
 *.npy
+*.egg-info/
+*.swp
+*.sh
+
