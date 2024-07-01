@@ -1,9 +1,14 @@
-# Overview We store the perturbed ensemble SOMA simulation data and the
+# Overview
+We store the perturbed ensemble SOMA simulation data and the
 postprocessed data (downscaled regular grid) in the project folder on
 `Perlmutter`.
 
 Data path: `/global/cfs/projectdirs/m4259/ecucuzzella/soma_ppe_data`
 
+The folder contains raw simulation output from purturbing `GM, Redi, cvmix,
+bottom_drag_coef` and data converted to regular grids.
+
+## Raw simulation output
 The folder contains raw simulation output from purturbing `GM, Redi, cvmix,
 bottom_drag_coef` and data converted to regular grids. ## Raw Simlation Output
 The raw simulation data live under `cvmix/, gm/, implicitbottomdrag/, redi/`.
@@ -18,9 +23,11 @@ the sixth month of the third year.
 The data files are in `netCDF` format. There are 60 vertical levels and >8000
 hexagonal cells making up the horizontal plane at each level. Each cell is
 associated with 73 variables (including the parameters). 
->[!Tips] Can follow up on the list of the variables.
 
-## Postprocessed Data The converted data for the current ML work is under
+>Can follow up on the list of the variables.
+
+## Postprocessed
+The converted data for the current ML work is under
 `ml_converted`. Currently the processed data only contain the results of one
 month and are stored in `hdf5` format. The single forward runs (100 in total)
 are treated as datasets in the `hdf5` file and can be accessed by keys of
@@ -31,4 +38,4 @@ In each run the data is remapped to a regular array of shape `(30, 60, 100,
 vertical levels, and `100` are the horizontal dimensions in both directions. 
 
 A list of the 17 variables are as follows, with the 17th being the purturbed
-parameter. ![[./figs/list_var.png]]
+parameter. ![](./figs/list_var.png)
