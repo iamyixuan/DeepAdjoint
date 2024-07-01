@@ -38,4 +38,4 @@ In each run the data is remapped to a regular array of shape `(30, 60, 100,
 vertical levels, and `100` are the horizontal dimensions in both directions. 
 
 A list of the 17 variables are as follows, with the 17th being the purturbed
-parameter. ![](./figs/list_var.png)
+parameter. ![](./images/list_var.png)
