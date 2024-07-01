@@ -4,7 +4,6 @@ import torch.nn as nn
 from ..utils.scaler import ChannelStandardScaler
 
 
-
 class Encoder(nn.Module):
     def __init__(self, input_ch, hidden_ch, latent_dim, volume=100 * 100 * 60):
         super(Encoder, self).__init__()
@@ -52,8 +51,8 @@ class Decoder(nn.Module):
                 hidden_ch, hidden_ch, kernel_size=3, stride=1, padding="same"
             ),
             nn.ReLU(),
-            nn.ConvTranspose3d(hidden_ch, output_ch, kernel_size=2, stride=2),
-            nn.ReLU(),
+            nn.ConvTranspose3d(hidden_ch, output_ch, kernel_size=4, stride=2, padding=1),
+            # nn.ReLU(),
             # nn.ConvTranspose3d(hidden_ch, output_ch, kernel_size=3, stride=1),
         )
 

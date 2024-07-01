@@ -26,8 +26,8 @@ master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_ADDR=$master_addr
 srun python train_vae.py -batch_size 32\
                       -epochs 5000\
-                      -lr 1e-3\
-                      -model VAE-4-save-lr1e-3\
+                      -lr 1e-5\
+                      -model VAE-lr1e-5-convtrans-k4s2p1\
                       -data GM_D_AVG-temp\
                       -train True
                       -model_path "./experiments/4D-GM_D_AVG-MSE-Adam/best_model_state.pt"

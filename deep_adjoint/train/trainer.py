@@ -210,7 +210,9 @@ class TrainerSOMA(BaseTrainer):
             self.logger.info(
                 f"Epoch: {ep + 1}, Train Loss: {np.mean(running_loss)}, Val Loss: {val_loss.item()}"
             )
-            pbar.set_postfix({'train': np.mean(running_loss), 'val': val_loss.item()})
+            pbar.set_postfix(
+                {"train": np.mean(running_loss), "val": val_loss.item()}
+            )
             if self.gpu_id == 0 and val_loss.item() < best_val:
                 best_val = val_loss.item()
                 torch.save(
