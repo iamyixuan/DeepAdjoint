@@ -67,14 +67,16 @@ def get_time_series(
     return x, y
 
 
-def make_h5data(data_path, dataset_name, data_f, keys, mode):
+def make_h5data(
+    data_path, dataset_name, data_f, keys, mode, hist_len=1, horizon=23
+):
     for i, k in tqdm(enumerate(keys)):
         x, y = get_time_series(
             data_f[k],
-            1,
-            10,
-            [8, -1],
-            [8],
+            hist_len,
+            horizon,
+            [10, -1],
+            [10],
         )  # Adjust as per your requirements
 
         # Open the file in append mode or create it if it's the first iteration
@@ -110,18 +112,42 @@ def make_h5data(data_path, dataset_name, data_f, keys, mode):
             dset_y[current_size_y:] = y
 
 
-def create_datasets(dataset_name, test_size=0.1):
+def create_datasets(dataset_name, test_size=0.1, hist_len=1, horizon=23):
     SCRACTH = "/pscratch/sd/y/yixuans/"
-    f = h5py.File(SCRACTH + "datatset/SOMA/thedataset-GM-dayAvg-2.hdf5", "r")
+    f = h5py.File(SCRACTH + "datatset/SOMA/data-forward0-19-GM.hdf5", "r")
     keys = list(f.keys())
     train_key, val_key, test_key = split_idx(len(f.keys()), test_size)
     train_key = [keys[i] for i in train_key]
     val_key = [keys[i] for i in val_key]
     test_key = [keys[i] for i in test_key]
-    make_h5data(SCRACTH, dataset_name, f, train_key, "train")
-    make_h5data(SCRACTH, dataset_name, f, val_key, "val")
+    print(
+        f"train: {len(train_key)}, val: {len(val_key)}, test: {len(test_key)}")
+    make_h5data(
+        SCRACTH,
+        dataset_name,
+        f,
+        train_key,
+        "train",
+        hist_len=hist_len,
+        horizon=horizon,
+    )
+    make_h5data(
+        SCRACTH,
+        dataset_name,
+        f,
+        val_key,
+        "val",
+        hist_len=hist_len,
+        horizon=horizon,
+    )
     make_h5data(SCRACTH, dataset_name, f, test_key, "test")
 
 
 if __name__ == "__main__":
-    create_datasets("dyffusion_temp_depth-3_horizon-10")
+    hist_len = 1
+    horizon = 23
+    create_datasets(
+        f"dyffusion_temp_depth-3_horizon-{horizon}-year3",
+        hist_len=hist_len,
+        horizon=horizon,
+    )

@@ -10,13 +10,13 @@ import numpy as np
 import pandas as pd
 import torch
 from data import SimpleDataset, SOMAdata
-from metrics import NLLLoss
+from metrics import QuantileLoss
 from model import Trainer
 from modulus.models.fno import FNO
 from torch.utils.data import DataLoader
 
 
-class FNO_MU_STD(torch.nn.Module):
+class FNO_QR(torch.nn.Module):
     def __init__(
         self,
         in_channels,
@@ -33,7 +33,7 @@ class FNO_MU_STD(torch.nn.Module):
         activation_fn,
         coord_features,
     ):
-        super(FNO_MU_STD, self).__init__()
+        super(FNO_QR, self).__init__()
         self.FNO = FNO(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -53,20 +53,16 @@ class FNO_MU_STD(torch.nn.Module):
 
     def forward(self, x):
         x = self.FNO(x)
-        ch = x.shape[1] // 2
-        mu = x[:, :ch, ...]
-        std = self.std_act(x[:, ch:, ...])
-        out = torch.cat([mu, std], dim=1)
-        return out
+        return x
 
 
 def run(config, args):
     np.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.manual_seed(0)
-    net = FNO_MU_STD(
+    net = FNO_QR(
         in_channels=5,
-        out_channels=4 * 2,
+        out_channels=4 * 3,
         decoder_layers=config["num_projs"],
         decoder_layer_size=config["proj_size"],
         decoder_activation_fn=config["proj_act"],
@@ -79,6 +75,16 @@ def run(config, args):
         activation_fn=config["lift_act"],
         coord_features=config["coord_feat"],
     )
+
+    # trainset = SimpleDataset(
+    #     '/pscratch/sd/y/yixuans/datatset/de_dataset/soma_deep_ensemble_train.h5'
+    #     )
+    # valset = SimpleDataset(
+    #     '/pscratch/sd/y/yixuans/datatset/de_dataset/soma_deep_ensemble_val.h5'
+    # )
+    # testSet = SimpleDataset(
+    #     '/pscratch/sd/y/yixuans/datatset/de_dataset/soma_deep_ensemble_test.h5'
+    # )
 
     trainset = SOMAdata(
         "/pscratch/sd/y/yixuans/datatset/de_dataset/GM-prog-var-surface.hdf5",
@@ -97,8 +103,8 @@ def run(config, args):
     )
 
     # TrainLossFn = MSE_ACCLoss(alpha=config['alpha'])
-    TrainLossFn = NLLLoss()
-    ValLossFn = NLLLoss()
+    TrainLossFn = QuantileLoss()
+    ValLossFn = QuantileLoss()
 
     trainer = Trainer(model=net, TrainLossFn=TrainLossFn, ValLossFn=ValLossFn)
 
@@ -120,18 +126,18 @@ def run(config, args):
         )
 
         # with open(
-        #     f"./experiments/ensemble{args.ensemble_id}_log_nll.pkl", "wb"
+        #     f"./experiments/ensemble{args.ensemble_id}_log_quantile.pkl", "wb"
         # ) as f:
         #     pickle.dump(log.logger, f)
 
         # save the model
         torch.save(
-            trainer.model.state_dict(),
-            f"./experiments/{args.ensemble_id}_bestStateDict_nll",
+            model.state_dict(),
+            f"./experiments/{args.ensemble_id}_bestStateDict_quantile",
         )
         true, pred = trainer.predict(testLoader)
         np.savez(
-            f"./experiments/{args.ensemble_id}_Pred_nll.npz",
+            f"./experiments/{args.ensemble_id}_Pred_quantile.npz",
             true=true,
             pred=pred,
         )
@@ -140,7 +146,7 @@ def run(config, args):
         valLoss = log.logger["ValLoss"]
 
         with open(
-            f"./experiments/{args.ensemble_id}_train_curve_nll.pkl", "wb"
+            f"./experiments/{args.ensemble_id}_train_curve_quantile.pkl", "wb"
         ) as f:
             pickle.dump({"train": trainLoss, "val": valLoss}, f)
 
@@ -148,11 +154,13 @@ def run(config, args):
         # load the model
         print("Pefroming Rollout...")
         trainer.model.load_state_dict(
-            torch.load(f"./experiments/{args.ensemble_id}_bestStateDict_nll")
+            torch.load(
+                f"./experiments/{args.ensemble_id}_bestStateDict_quantile"
+            )
         )
         rolloutPred = trainer.rollout(testLoader)
         with open(
-            f"./experiments/{args.ensemble_id}_Rollout_nll.pkl", "wb"
+            f"./experiments/{args.ensemble_id}_Rollout_qunatile.pkl", "wb"
         ) as f:
             pickle.dump(rolloutPred, f)
     return

@@ -38,14 +38,20 @@ def run(args):
         args.gpu = 0
 
     # ================= Load data =================
-    SCRATCH = '/pscratch/sd/y/yixuans/'
-    train_set = SimpleDataset(file_path=SCRATCH+'temp_vae_train.h5')
-    val_set = SimpleDataset(file_path=SCRATCH+'temp_vae_val.h5')
-    test_set = SimpleDataset(file_path=SCRATCH+'temp_vae_test.h5')
+    SCRATCH = "/pscratch/sd/y/yixuans/"
+    train_set = SimpleDataset(file_path=SCRATCH + "temp_vae_train.h5")
+    val_set = SimpleDataset(file_path=SCRATCH + "temp_vae_val.h5")
+    test_set = SimpleDataset(file_path=SCRATCH + "temp_vae_test.h5")
 
     # ================= Load model =================
 
-    net = VAE(input_ch=1, hidden_ch=32, latent_dim=16, scaler=None, train_data_stats=None) 
+    net = VAE(
+        input_ch=1,
+        hidden_ch=32,
+        latent_dim=args.latent_dim,
+        scaler=None,
+        train_data_stats=None,
+    )
 
     trainer = TrainerSOMA(
         net=net,
@@ -82,7 +88,7 @@ def run(args):
             f"{save_path}/test-predictions.pkl",
             "wb",
         ) as f:
-            true_pred = { "pred": pred, "x": x}
+            true_pred = {"pred": pred, "x": x}
             pickle.dump(true_pred, f)
 
     elif args.train == "False":

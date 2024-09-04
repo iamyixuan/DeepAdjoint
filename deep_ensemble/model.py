@@ -1,13 +1,14 @@
 import os
-import torch
-import numpy as np
 import pickle
-from tqdm import tqdm
+import time
+
+import numpy as np
+import torch
+from data import SOMAdata
+from metrics import ACCLoss, MSE_ACCLoss, anomalyCorrelationCoef, r2
 from modulus.models.fno import FNO
 from torch.utils.data import DataLoader
-from data import SOMAdata
-import time
-from metrics import anomalyCorrelationCoef, r2, ACCLoss, MSE_ACCLoss
+from tqdm import tqdm
 
 
 def get_optimizer(name):
@@ -30,9 +31,13 @@ def get_optimizer(name):
 
 def get_scheduler(name, optimizer):
     if name == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            optimizer, 50
+        )
     elif name == "plateau":
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, "min"
+        )
     elif name == "step":
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30)
     else:
@@ -84,6 +89,8 @@ class Trainer:
 
         logger = Logger("./log/")
         bestVal = np.inf
+        bestModel = None
+        patience = 0
 
         self.model.train()
         logger.log(
@@ -92,11 +99,10 @@ class Trainer:
         )
         for ep in tqdm(range(epochs)):
             runningLoss = []
-            start_time = time.time()  # Record start time
+            # start_time = time.time()  # Record start time
 
             # Perform your operations within the loop
 
-            
             for xTrain, yTrain in trainLoader:
                 xTrain = xTrain.to(self.device)
                 yTrain = yTrain.to(self.device)
@@ -108,18 +114,25 @@ class Trainer:
                 runningLoss.append(loss.item())
             # scheduler.step()
             valLoss, acc, r2 = self.val(valLoader)
-            # if valLoss < bestVal:
-            #     torch.save(self.model.state_dict(), './savedModel/bestStateDict')
-            #     bestVal = valLoss
-            #     logger.log('BestModelEp', ep)
+            if valLoss < bestVal:
+                # torch.save(
+                #     self.model.state_dict(), "./experiments/bestStateDict"
+                # )
+                bestVal = valLoss
+                bestModel = self.model
+                patience = 0
+            else:
+                patience += 1
+
+                # logger.log('BestModelEp', ep)
 
             # logger.save('bsize_128_ep_100')
 
-            #print(f"Epoch {ep}, Train loss {np.mean(runningLoss)}, Val loss {valLoss}")
+            # print(f"Epoch {ep}, Train loss {np.mean(runningLoss)}, Val loss {valLoss}")
 
-            end_time = time.time()  # Record end time
-            iteration_time = end_time - start_time  # Calculate iteration time
-            
+            # end_time = time.time()  # Record end time
+            # iteration_time = end_time - start_time  # Calculate iteration time
+
             logger.log("Epoch", ep)
             logger.log("TrainLoss", np.mean(runningLoss))
             logger.log("ValLoss", valLoss.item())
@@ -128,12 +141,11 @@ class Trainer:
             print("train loss", np.mean(runningLoss))
             print("val loss", valLoss.item())
 
-            if iteration_time > 200:
-                break # break the high computational cost configurations
-            # if ep >= 9 and valLoss.item() >= 0.1: #terminate training if worse than the constant predictor after 10 epochs
-            #     logger.log('Flag', 'F')
-            #     break
-        return logger
+            # if iteration_time > 200:
+            #     break  # break the high computational cost configurations
+            if patience > 30:
+                break
+        return logger, bestModel
 
     def val(self, valLoader):
         self.model.eval()
@@ -141,12 +153,19 @@ class Trainer:
             for xVal, yVal in valLoader:
                 xVal = xVal.to(self.device)
                 yVal = yVal.to(self.device)
+                ch = yVal.shape[1]
                 predVal = self.model(xVal)
-                
+
                 # only use MSE as loss with additional metrics
                 valLoss = self.ValLossFn(yVal, predVal)
-                acc = anomalyCorrelationCoef(yVal.detach().cpu().numpy(), predVal[:,:5,...].detach().cpu().numpy())
-                r2_score = r2(yVal.detach().cpu().numpy(), predVal[:,:5, ...].detach().cpu().numpy())
+                acc = anomalyCorrelationCoef(
+                    yVal.detach().cpu().numpy(),
+                    predVal[:, :ch, ...].detach().cpu().numpy(),
+                )
+                r2_score = r2(
+                    yVal.detach().cpu().numpy(),
+                    predVal[:, :ch, ...].detach().cpu().numpy(),
+                )
         return valLoss, acc, r2_score
 
     # def test(self, testLoader):
@@ -157,60 +176,96 @@ class Trainer:
     #         testLoss = self.ValLossFn(yTest, predTest)
     #     inferenceTime = time.time() - start_time
     #     return testLoss.item(), inferenceTime
-    
+
     def predict(self, testLoader):
         self.model.eval()
+        true = []
+        pred = []
         with torch.no_grad():
             for xTest, yTest in testLoader:
                 xTest = xTest.to(self.device)
                 yTest = yTest.to(self.device)
                 predTest = self.model(xTest)
-        return predTest.detach().cpu().numpy(), yTest.cpu().numpy()
-    
-    def rollout(self, dataloader):
+                true.append(yTest.cpu().numpy())
+                pred.append(predTest.detach().cpu().numpy())
+        return np.concatenate(true), np.concatenate(pred)
+
+    def rollout(self, dataloader, loss="NLL"):
         self.model.eval()
         start_time = time.time()
         # for every 29 steps we save a sequence
-        truePred = {'true': [] , 'pred': []}
+        truePred = {"true": [], "pred": []}
         temp = []
         true = []
         for i, (x, y) in enumerate(dataloader):
+            x = x.to(self.device)
+            y = y.to(self.device)
+            ch = y.shape[1]
             if i % 29 == 0 and i > 0:
-                truePred['true'].append(true)
-                truePred['pred'].append(temp)
-                temp = [self.model(x)] # reset sequence
+                truePred["true"].append(true)
+                truePred["pred"].append(temp)
+                temp = [self.model(x)]  # reset sequence
                 true = [y]
             else:
                 if len(temp) != 0:
-                    oneStepPred = self.model(torch.cat([temp[-1], x[:,-1:, ...]], dim=1))
+                    if loss == "NLL":
+                        oneStepPred = self.model(
+                            torch.cat(
+                                [temp[-1][:, :ch, ...], x[:, -1:, ...]], dim=1
+                            )
+                        )
+                    elif loss == "quantile":
+                        oneStepPred = self.model(
+                            torch.cat(
+                                [
+                                    temp[-1][:, ch : 2 * ch, ...],
+                                    x[:, -1:, ...],
+                                ],
+                                dim=1,
+                            )
+                        )
                 else:
                     temp = [self.model(x)]
                     true = [y]
-                    oneStepPred = self.model(torch.cat([temp[-1], x[:,-1:, ...]], dim=1))
+                    if loss == "NLL":
+                        oneStepPred = self.model(
+                            torch.cat(
+                                [temp[-1][:, :ch, ...], x[:, -1:, ...]], dim=1
+                            )
+                        )
+                    elif loss == "quantile":
+                        oneStepPred = self.model(
+                            torch.cat(
+                                [
+                                    temp[-1][:, ch : 2 * ch, ...],
+                                    x[:, -1:, ...],
+                                ],
+                                dim=1,
+                            )
+                        )
 
                 temp.append(oneStepPred)
                 true.append(y)
         end_time = time.time()  # Record end time
-        iteration_time = end_time - start_time  # Calculate 
+        iteration_time = end_time - start_time  # Calculate
         print("Rollout time is:", iteration_time)
         return truePred
-                
-
-
-        
 
 
 if __name__ == "__main__":
+
     net = FNO(
         in_channels=6,
         out_channels=5,
         dimension=2,
     )
     trainset = SOMAdata(
-        "/home/iamyixuan/work/ImPACTs/HPO/datasets/GM-prog-var-surface.hdf5", "train"
+        "/home/iamyixuan/work/ImPACTs/HPO/datasets/GM-prog-var-surface.hdf5",
+        "train",
     )
     valset = SOMAdata(
-        "/home/iamyixuan/work/ImPACTs/HPO/datasets/GM-prog-var-surface.hdf5", "val"
+        "/home/iamyixuan/work/ImPACTs/HPO/datasets/GM-prog-var-surface.hdf5",
+        "val",
     )
     trainer = Trainer(
         model=net,

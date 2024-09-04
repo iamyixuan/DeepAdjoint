@@ -46,21 +46,44 @@ def anomalyCorrelationCoef(true, pred):
     return cov / std
 
 
+class QuantileLoss(nn.Module):
+    def __init__(self):
+        super(QuantileLoss, self).__init__()
+        self.quantiles = [0.33, 0.5, 0.66]
+
+    def forward(self, true, pred):
+        """
+        true and pred have shape (B, ch*3, 100, 100)
+        we should calculate the channel wise scores
+        """
+        loss = 0
+        ch = true.shape[1]
+        for i, q in enumerate(self.quantiles):
+            pred_qauntile = pred[:, i * ch : (i + 1) * ch, :, :]
+            loss += torch.mean(
+                torch.max(
+                    q * (true - pred_qauntile),
+                    (q - 1) * (true - pred_qauntile),
+                )
+            )
+        return loss
+
+
 class NLLLoss(nn.Module):
     def __init__(self):
         super(NLLLoss, self).__init__()
 
     def forward(self, true, pred):
         """
-        mean and std have shape (B, 5, 100, 100)
-        true has shape (B, 5, 100, 100)
+        mean and std have shape (B, 4, 100, 100)
+        true has shape (B, 4, 100, 100)
 
         """
         ch = true.shape[1]
         mean = pred[:, :ch, :, :]
         var = pred[:, ch:, :, :]
         a = 0.5 * torch.log(var)
-        b = 0.5 * ((true - mean)**2 / var)
+        b = 0.5 * ((true - mean) ** 2 / var)
         # print(var.mean().item())
         # return torch.mean(
         #     0.5 * torch.log(2 * np.pi * var)
