@@ -8,6 +8,15 @@ import torch
 from torch.utils.data import Dataset
 
 
+def add_noise(data, scale_list):
+    loc = np.zeros(data.shape)
+    scales = np.ones_like(data)
+    for i in range(len(scale_list)):
+        scales[..., i] = scale_list[i] * scales[..., i]
+    data = data + np.random.normal(loc, scales, data.shape)
+    return data
+
+
 class MinMaxScaler:
     def __init__(self, data, min_=0, max_=1) -> None:
         data = data.astype(np.float64)
@@ -115,17 +124,17 @@ class SOMAdata(Dataset):
         mode,
         time_steps_per_forward=30,
         transform=False,
-        train_noise=False,
+        x_noise=False,
+        y_noise=False,
     ):
         """path: the hd5f file path, can be relative path
         mode: ['trian', 'val', 'test']
         """
         super(SOMAdata, self).__init__()
         self.mode = mode
-        self.train_noise = train_noise
+        self.x_noise = x_noise
+        self.y_noise = y_noise
 
-        DIR = os.path.dirname(os.path.abspath(__file__))
-        data_path = os.path.join(DIR, path)
         self.data = h5py.File(path, "r")
         keys = list(self.data.keys())
 
@@ -173,6 +182,30 @@ class SOMAdata(Dataset):
 
         # x = x[0]
         # y = y[0]
+        if self.x_noise:
+            x = add_noise(
+                x,
+                [
+                    0.0,
+                    np.sqrt(0.0001),
+                    np.sqrt(0.25),
+                    np.sqrt(0.0025),
+                    np.sqrt(0.0025),
+                    0.0,
+                ],
+            )
+        if self.y_noise:
+            y = add_noise(
+                y,
+                [
+                    0.0,
+                    np.sqrt(0.0001),
+                    np.sqrt(0.25),
+                    np.sqrt(0.0025),
+                    np.sqrt(0.0025),
+                    0.0,
+                ],
+            )
 
         if self.transform:
             x = self.scaler.transform(x)
@@ -209,7 +242,55 @@ class SOMAdata(Dataset):
 
 
 if __name__ == "__main__":
-    data = SOMAdata(
-        "/home/iamyixuan/work/ImPACTs/HPO/datasets/GM-prog-var-surface.hdf5",
-        "train",
+    # data = SOMAdata(
+    #     "/Users/yixuan.sun/Documents/Projects/ImPACTS/deep_ensemble/datasets/GM-prog-var-surface-noise.hdf5",
+    #     "train",
+    # )
+
+    data = h5py.File(
+        "../../../deep_ensemble/datasets/GM-prog-var-surface.hdf5",
+        "r",
     )
+
+    with h5py.File(
+        "../../../deep_ensemble/datasets/GM-prog-var-surface-noise.hdf5", "w"
+    ) as f:
+        for key in data.keys():
+            print(key)
+            sample_data = data[key][...]
+
+            noise_data = add_noise(
+                sample_data,
+                [
+                    0.0,
+                    np.sqrt(0.0001),
+                    np.sqrt(0.25),
+                    np.sqrt(0.0025),
+                    np.sqrt(0.0025),
+                    0.0,
+                ],
+            )
+            print(noise_data.shape)
+            f.create_dataset(key, data=noise_data)
+
+    # mask = np.abs(sample_data) > 1e16
+    # print(sample_data.shape)
+    # sample_data[mask] = np.nan
+    # nosie_data[mask] = np.nan
+
+    # import matplotlib.pyplot as plt
+    #
+    # fig, axs = plt.subplots(1, 3)
+    # var_idx = 0
+    # im = axs[0].imshow(sample_data[0, :, :, var_idx])
+    # im2 = axs[1].imshow(nosie_data[0, :, :, var_idx])
+    # im3 = axs[2].imshow(
+    #     nosie_data[0, :, :, var_idx] - sample_data[0, :, :, var_idx]
+    # )
+    #
+    # plt.colorbar(im)
+    # plt.colorbar(im2)
+    # plt.colorbar(im3)
+    # plt.show()
+    #
+    # print(nosie_data.shape)

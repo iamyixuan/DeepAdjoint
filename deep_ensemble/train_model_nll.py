@@ -32,6 +32,8 @@ class FNO_MU_STD(torch.nn.Module):
         padding_type,
         activation_fn,
         coord_features,
+        beta=5.0,
+        threshold=20.0,
     ):
         super(FNO_MU_STD, self).__init__()
         self.FNO = FNO(
@@ -49,14 +51,14 @@ class FNO_MU_STD(torch.nn.Module):
             activation_fn=activation_fn,
             coord_features=coord_features,
         )
-        self.std_act = torch.nn.Softplus()
+        self.var_act = torch.nn.Softplus(beta=beta, threshold=threshold)
 
     def forward(self, x):
         x = self.FNO(x)
         ch = x.shape[1] // 2
         mu = x[:, :ch, ...]
-        std = self.std_act(x[:, ch:, ...])
-        out = torch.cat([mu, std], dim=1)
+        var = self.var_act(x[:, ch:, ...])
+        out = torch.cat([mu, var], dim=1)
         return out
 
 
@@ -80,18 +82,21 @@ def run(config, args):
         coord_features=config["coord_feat"],
     )
 
+    filename = "GM-prog-var-surface.hdf5"
     trainset = SOMAdata(
-        "/pscratch/sd/y/yixuans/datatset/de_dataset/GM-prog-var-surface.hdf5",
+        f"/pscratch/sd/y/yixuans/datatset/de_dataset/{filename}",
         "train",
+        y_noise=True,
         transform=True,
     )
     valset = SOMAdata(
-        "/pscratch/sd/y/yixuans/datatset/de_dataset/GM-prog-var-surface.hdf5",
+        f"/pscratch/sd/y/yixuans/datatset/de_dataset/{filename}",
         "val",
+        y_noise=True,
         transform=True,
     )
     testSet = SOMAdata(
-        "/pscratch/sd/y/yixuans/datatset/de_dataset/GM-prog-var-surface.hdf5",
+        f"/pscratch/sd/y/yixuans/datatset/de_dataset/{filename}",
         "test",
         transform=True,
     )
@@ -113,16 +118,11 @@ def run(config, args):
         log, model = trainer.train(
             trainLoader=trainLoader,
             valLoader=valLoader,
-            epochs=1000,
+            epochs=500,
             optimizer=config["optimizer"],
             learningRate=1e-4,  # config["lr"],
             weight_decay=config["weight_decay"],
         )
-
-        # with open(
-        #     f"./experiments/ensemble{args.ensemble_id}_log_nll.pkl", "wb"
-        # ) as f:
-        #     pickle.dump(log.logger, f)
 
         # save the model
         torch.save(
@@ -136,13 +136,13 @@ def run(config, args):
             pred=pred,
         )
 
-        trainLoss = log.logger["TrainLoss"]
-        valLoss = log.logger["ValLoss"]
+        # trainLoss = log.logger["TrainLoss"]
+        # valLoss = log.logger["ValLoss"]
 
         with open(
             f"./experiments/{args.ensemble_id}_train_curve_nll.pkl", "wb"
         ) as f:
-            pickle.dump({"train": trainLoss, "val": valLoss}, f)
+            pickle.dump(log.logger, f)
 
     elif os.environ.get("ROLLOUT") == "True":
         # load the model
@@ -159,16 +159,11 @@ def run(config, args):
 
 
 def getBestConfig(df, ensemble_id):
-    # load the result.csv datafraem
     # remove 'F'
     df = df[df["objective_0"] != "F"]
-    # df = df[df['objective_2']!='F']
-    # take out the pareto front
-    # df = df[df['pareto_efficient']==True]
-
     # convert to float and take the negative
-    df["objective_0"] = df["objective_0"].astype(float)
-    df["objective_1"] = df["objective_1"].astype(float)
+    df.loc[:, 'objective_0'] = df['objective_0'].values.astype(float)
+    df.loc[:, 'objective_1'] = df['objective_1'].values.astype(float)
     # Pick the best objectives
 
     max_row_index = (
@@ -177,7 +172,9 @@ def getBestConfig(df, ensemble_id):
         .index[ensemble_id]
     )
     df = df.rename(columns=lambda x: x.replace("p:", ""))
-    print("config acc is", df.loc[max_row_index]["objective_1"])
+    obj_0 = df.loc[max_row_index, 'objective_0']
+    obj_1 = df.loc[max_row_index, 'objective_1']
+    print(f"Config {max_row_index}, Objective 0 {obj_0} Objective 1 {obj_1}")
     return df.loc[max_row_index]
 
 
@@ -186,7 +183,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--df_path", type=str, default="./results/results.csv")
+    parser.add_argument(
+        "--df_path",
+        type=str,
+        default="./hpo_logs/hpo_nll_quantile_new/results.csv",
+    )
     parser.add_argument("--ensemble_id", type=int, default=0)
     args = parser.parse_args()
 

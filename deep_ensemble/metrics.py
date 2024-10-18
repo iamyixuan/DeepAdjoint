@@ -1,6 +1,47 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.distributions.normal import Normal
+
+
+def MSE(true, pred):
+    return np.mean(np.power(true - pred, 2))
+
+
+def MAE(true, pred):
+    return np.mean(np.abs(true - pred))
+
+
+def NMSE(true, pred):
+    return np.mean(np.power(true - pred, 2)) / np.mean(np.power(true, 2))
+
+
+def NMAE(true, pred):
+    return np.mean(np.abs(true - pred)) / np.mean(np.abs(true))
+
+
+def RMSE(true, pred):
+    return np.sqrt(np.mean(np.power(true - pred, 2)))
+
+
+def r2_score(true, pred):
+    ss_res = np.sum(np.power(true - pred, 2))
+    ss_tot = np.sum(np.power(true - np.mean(true), 2))
+    return 1 - ss_res / ss_tot
+
+
+def log_likelihood_score(loc, scale, sample):
+    # if not torch tensor convert
+    if not torch.is_tensor(loc):
+        loc = torch.tensor(loc)
+    if not torch.is_tensor(scale):
+        scale = torch.tensor(scale)
+    if not torch.is_tensor(sample):
+        sample = torch.tensor(sample)
+    scale = torch.clamp(scale, min=1e-6)
+    normal_distr = Normal(loc, scale)
+    log_likelihood = normal_distr.log_prob(sample)
+    return log_likelihood.mean()
 
 
 def r2(true, pred):
@@ -49,7 +90,7 @@ def anomalyCorrelationCoef(true, pred):
 class QuantileLoss(nn.Module):
     def __init__(self):
         super(QuantileLoss, self).__init__()
-        self.quantiles = [0.33, 0.5, 0.66]
+        self.quantiles = [0.1587, 0.5, 0.8413]
 
     def forward(self, true, pred):
         """
@@ -82,14 +123,11 @@ class NLLLoss(nn.Module):
         ch = true.shape[1]
         mean = pred[:, :ch, :, :]
         var = pred[:, ch:, :, :]
-        a = 0.5 * torch.log(var)
-        b = 0.5 * ((true - mean) ** 2 / var)
-        # print(var.mean().item())
-        # return torch.mean(
-        #     0.5 * torch.log(2 * np.pi * var)
-        #     + 0.5 * ((true - mean)**2 / var)
-        # )
-        return torch.mean(a + b)
+
+        std = torch.clamp(torch.sqrt(var), min=1e-6)
+        normal_distr = Normal(mean, std)
+        loss = -normal_distr.log_prob(true)
+        return loss.mean()
 
 
 class ACCLoss(nn.Module):
@@ -137,3 +175,19 @@ class MSE_ACCLoss(nn.Module):
         mse_term = torch.mean((true - pred) ** 2)
 
         return self.alpha * mse_term + (1 - self.alpha) * acc_term
+
+
+class MSELoss(nn.Module):
+    def __init__(self):
+        super(MSELoss, self).__init__()
+
+    def forward(self, true, pred):
+        return torch.mean((true - pred) ** 2)
+
+
+class MAELoss(nn.Module):
+    def __init__(self):
+        super(MAELoss, self).__init__()
+
+    def forward(self, true, pred):
+        return torch.mean(torch.abs(true - pred))

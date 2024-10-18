@@ -12,16 +12,13 @@ import os
 from deephyper.evaluator import Evaluator, RunningJob, profile
 from deephyper.problem import HpProblem
 from deephyper.search.hps import CBO
+from metrics import MSE_ACCLoss, anomalyCorrelationCoef
+from model import *
 from modulus.models.fno import FNO
 from mpi4py import MPI
 from sklearn.preprocessing import QuantileTransformer
 
-from metrics import MSE_ACCLoss, anomalyCorrelationCoef
-from model import *
-
 # Avoid some errors on some MPI implementations
-
-
 
 
 problem = HpProblem()

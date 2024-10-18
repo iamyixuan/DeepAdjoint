@@ -5,10 +5,18 @@ import time
 import numpy as np
 import torch
 from data import SOMAdata
-from metrics import ACCLoss, MSE_ACCLoss, anomalyCorrelationCoef, r2
+from metrics import MAE, MSE, NMAE, NMSE, RMSE, log_likelihood_score, r2_score
 from modulus.models.fno import FNO
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+
+class BranchFNO(FNO):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.branch1 = None
+        self.branch2 = None
+        self.branch3 = None
 
 
 def get_optimizer(name):
@@ -64,7 +72,8 @@ class Logger:
 
 
 class Trainer:
-    def __init__(self, model, TrainLossFn, ValLossFn):
+    def __init__(self, model, TrainLossFn, ValLossFn, loss="nll"):
+        self.loss = loss
         self.model = model
         self.TrainLossFn = TrainLossFn
         self.ValLossFn = ValLossFn
@@ -113,7 +122,16 @@ class Trainer:
                 optimizer.step()
                 runningLoss.append(loss.item())
             # scheduler.step()
-            valLoss, acc, r2 = self.val(valLoader)
+            (
+                valLoss,
+                MSE_score,
+                RMSE_score,
+                NMSE_score,
+                MAE_score,
+                NMAE_score,
+                r2,
+                ll_score,
+            ) = self.val(valLoader)
             if valLoss < bestVal:
                 # torch.save(
                 #     self.model.state_dict(), "./experiments/bestStateDict"
@@ -136,13 +154,25 @@ class Trainer:
             logger.log("Epoch", ep)
             logger.log("TrainLoss", np.mean(runningLoss))
             logger.log("ValLoss", valLoss.item())
-            logger.log("ValACC", acc)
-            logger.log("ValR2", r2)
-            print("train loss", np.mean(runningLoss))
-            print("val loss", valLoss.item())
+            logger.log("Val_MSE", MSE_score)
+            logger.log("Val_RMSE", RMSE_score)
+            logger.log("Val_NMSE", NMSE_score)
+            logger.log("Val_MAE", MAE_score)
+            logger.log("Val_NMAE", NMAE_score)
+            logger.log("Val_r2", r2)
+            logger.log("Val_ll", ll_score)
+
+            # print("train loss", np.mean(runningLoss))
+            # print("val loss", valLoss.item())
+            # print("val MSE", MSE_score)
+            # print("val MAE", MAE_score)
+            # print("val R2", r2)
+            # print("val ll", ll_score)
 
             # if iteration_time > 200:
             #     break  # break the high computational cost configurations
+            if np.isnan(ll_score).any():
+                break
             if patience > 30:
                 break
         return logger, bestModel
@@ -158,15 +188,47 @@ class Trainer:
 
                 # only use MSE as loss with additional metrics
                 valLoss = self.ValLossFn(yVal, predVal)
-                acc = anomalyCorrelationCoef(
-                    yVal.detach().cpu().numpy(),
-                    predVal[:, :ch, ...].detach().cpu().numpy(),
+
+                val_true = yVal.detach().cpu().numpy()
+                if self.loss == "quantile":
+                    val_pred_mean = (
+                        predVal[:, ch : 2 * ch, ...].detach().cpu().numpy()
+                    )
+                    q_16 = predVal[:, :ch, ...].detach().cpu().numpy()
+                    q_84 = predVal[:, 2 * ch :, ...].detach().cpu().numpy()
+                    val_pred_std = np.abs(q_84 - q_16) / 2
+                elif self.loss == "nll":
+                    val_pred_mean = predVal[:, :ch, ...].detach().cpu().numpy()
+                    val_pred_std = predVal[:, ch:, ...].detach().cpu().numpy()
+                    val_pred_std = np.sqrt(val_pred_std)
+                else:
+                    val_pred_mean = predVal.detach().cpu().numpy()
+                    val_pred_std = 0
+
+                mask = val_true != 0
+                val_true = val_true[mask]
+                val_pred_mean = val_pred_mean[mask]
+                val_pred_std = val_pred_std[mask]
+
+                MSE_score = MSE(val_true, val_pred_mean)
+                RMSE_score = RMSE(val_true, val_pred_mean)
+                MAE_score = MAE(val_true, val_pred_mean)
+                NMAE_score = NMAE(val_true, val_pred_mean)
+                NMSE_score = NMSE(val_true, val_pred_mean)
+                r2 = r2_score(val_true, val_pred_mean)
+                ll_score = log_likelihood_score(
+                    val_pred_mean, val_pred_std, val_true
                 )
-                r2_score = r2(
-                    yVal.detach().cpu().numpy(),
-                    predVal[:, :ch, ...].detach().cpu().numpy(),
-                )
-        return valLoss, acc, r2_score
+        return (
+            valLoss,
+            MSE_score,
+            RMSE_score,
+            NMSE_score,
+            MAE_score,
+            NMAE_score,
+            r2,
+            ll_score,
+        )
 
     # def test(self, testLoader):
     #     self.model.eval()
