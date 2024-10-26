@@ -8,6 +8,9 @@ def MSE(true, pred):
     return np.mean(np.power(true - pred, 2))
 
 
+def MSE_torch(true, pred):
+    return torch.mean(torch.pow(true - pred, 2))
+
 def MAE(true, pred):
     return np.mean(np.abs(true - pred))
 

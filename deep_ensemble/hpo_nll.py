@@ -160,7 +160,7 @@ def run(job: RunningJob):
         log, best_model = trainer.train(
             trainLoader=trainLoader,
             valLoader=valLoader,
-            epochs=200,  # with early stopping
+            epochs=500,  # with early stopping
             optimizer=config["optimizer"],
             learningRate=config["lr"],
             # scheduler=config['scheduler'],
@@ -207,7 +207,7 @@ if __name__ == "__main__":
 
     faulthandler.enable()
 
-    log_dir = "./hpo_logs/hpo_nll_quantile_new/"
+    log_dir = "./hpo_logs/hpo_nll_quantile_checkpointing/"
 
     if not MPI.Is_initialized():
         MPI.Init_thread()

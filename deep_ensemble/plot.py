@@ -242,12 +242,12 @@ def plot_single_field(
     fig, ax = plt.subplots(
         1, 1, figsize=set_size(fig_width, golden_ratio=False)
     )
-    im = ax.imshow(field, cmap="plasma", vmin=vmin, vmax=vmax)
+    im = ax.imshow(field, cmap="RdBu_r", vmin=vmin, vmax=vmax)
     ax.axis("off")
     ax.set_title(field_name)
     cax = fig.add_axes(
         [
-            ax.get_position().x1 + 0.01,
+            ax.get_position().x1 + 0.02,
             ax.get_position().y0,
             0.02,
             ax.get_position().height,
@@ -260,28 +260,59 @@ def plot_single_field(
 
 # plot rollout
 def plot_rollout_metrics(true, pred, mask, score_fn, fig_width="thesis"):
+    """
+    true: [num_seq, time_steps, 4, 100, 100]
+    pred: [num_seq, time_steps, 4, 100, 100]
+    mask: [100, 100]
+    """
+    colors = ["#662400", "#B33F00", "#FF6B1A", "#006663", "#00B3AD"]
+    # make color cycle
+    plt.rcParams["axes.prop_cycle"] = cycler(color=colors)
+
     var_names = [
         "Salinity",
         "Temperature",
         "Meridional Velocity",
         "Zonal Velocity",
     ]
-    T = true.shape[0]
+    T = true.shape[1]
+    mask = np.repeat(mask[None, ...], true.shape[0], axis=0)
     scores = []
     for t in range(T):
         cur_scores = []
-        for var_id in range(true.shape[1]):
-            true_ = true[t, var_id][~mask]
-            pred_ = pred[t, var_id][~mask]
+        for var_id in range(true.shape[2]):
+            true_ = true[:, t, var_id][~mask]
+            pred_ = pred[:, t, var_id][~mask]
             cur_scores.append(score_fn(true_, pred_))
         scores.append(cur_scores)
     scores = np.array(scores)  # [T, ch]
     fig, ax = plt.subplots(1, 1, figsize=set_size(fig_width))
-    for var_id in range(true.shape[1]):
+    for var_id in range(true.shape[2]):
         ax.plot(scores[:, var_id], label=f"{var_names[var_id]}")
     ax.set_xlabel("Time Step")
     ax.set_ylabel("Score")
     ax.legend()
+    ax.grid(linestyle="dotted")
+    plt.tight_layout()
+    return fig
+
+
+def plot_num_members_metrics(
+    true, pred_mean, pred_std, score_fn, fig_width="thesis"
+):
+    """
+    pred: [num_members, 4, 100, 100]
+
+    """
+    fig, ax = plt.subplots(1, 1, figsize=set_size(fig_width))
+    for i in range(pred_mean.shape[0]):
+        pred_mean_ = pred_mean[i]
+        # pred_std_ = pred_std[i][~mask]
+        score = score_fn(true, pred_mean_)
+        ax.scatter(i, score, color="blue")
+    ax.set_xlabel("Number of Members")
+    ax.set_ylabel("Score")
+    ax.grid(linestyle="dotted")
     plt.tight_layout()
     return fig
 
@@ -349,7 +380,7 @@ def plot_uncertainty_field(
     ax.set_title(field_name)
     cax = fig.add_axes(
         [
-            ax.get_position().x1 + 0.01,
+            ax.get_position().x1 + 0.02,
             ax.get_position().y0,
             0.02,
             ax.get_position().height,
@@ -372,8 +403,8 @@ def plot_metrics(metrics_field, fig_width="thesis"):
 
 if __name__ == "__main__":
     import argparse
-    import pickle
     import os
+    import pickle
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--loss", type=str, default="nll")
@@ -386,7 +417,6 @@ if __name__ == "__main__":
 
     if os.path.exists(f"./figs/{fig_folder}") is False:
         os.mkdir(f"./figs/{fig_folder}")
-
 
     train_loss_list = []
     val_loss_list = []
